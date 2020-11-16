@@ -175,14 +175,18 @@ class RigPoseGenerator(object):
                 self.cur_data_set['moverValues'][ctrl] = [mc.getAttr(ctrl)]
             return
 
+        # Initialize a random distributor
         distribution = rand_generator.truncnorm(-1 * distribution_scale,
                                                 distribution_scale,
                                                 loc=0.0,
                                                 scale=1.0)
 
+        # NOTE: mover_ranges.controls() will give a list
+        # The list means the keys of limits
         dis = distribution.rvs(len(self.mover_ranges.controls))
 
         for index, ctrl in enumerate(self.mover_ranges.controls):
+            # index is the position of the key in the list
             lock_state = mc.getAttr(ctrl, lock=True)
             if lock_state:
                 logger.debug("warning: can't set %s" % ctrl)

@@ -201,12 +201,16 @@ class MoverRanges(PrepData):
         """export mover range data
         """
         data_dict = {}
+
+        # Set the attribute names (rotation, translation, scale)
         full_attrs = ['rotateX', 'rotateY', 'rotateZ', 
                       'translateX', 'translateY', 'translateZ',
                       'scaleX', 'scaleY', 'scaleZ']
         attributes = ['rx', 'ry', 'rz', 'tx', 'ty', 'tz', 'sx', 'sy', 'sz', '']
 
         data_dict['mover'] = []
+
+        # Create the corresponding full attribute names
         for attr in attributes:
             for suffix in ['_min', '_max']:
                 fa = attr + suffix
