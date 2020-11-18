@@ -40,3 +40,42 @@ attributes = ['translateX', 'translateY', 'translateZ',
 
 # short name for attributes
 attr_sn = ['tx', 'ty', 'tz', 'rx', 'ry', 'rz', 'sx', 'sy', 'sz']
+attr_limit = ['TransXLimit', 'TransYLimit', 'TransZLimit', 
+                'RotXLimit', 'RotYLimit', 'RotZLimit',
+                'ScaleXLimit', 'ScaleYLimit', 'ScaleZLimit']
+
+# get full names of attributes
+attr_fn = ['mover']
+for attr in attributes:
+    attr_fn.append(attr + '_min')
+    attr_fn.append(attr + '_max')
+
+# for each mover, generate the range of each attributes
+mover_range = {}
+for mover in movers:
+    # get the locked attributes
+    attr_lock = mc.listAttr(mover, l=True, sn=True)
+    temp = []
+    for i, attr in enumerate(attr_sn):
+        if attr in attr_lock:
+            # the attribute is locked -- assign min and max as default
+            temp.append(mc.getAttr(mover + '.' + attr))
+            temp.append(mc.getAttr(mover + '.' + attr))
+        else:
+            # get the limit of the attribute
+            temp.append(mc.getAttr(mover + '.min' + attr_limit[i]))
+            temp.append(mc.getAttr(mover + '.max' + attr_limit[i]))
+    
+    # assign the info to dictionary
+    mover_range[mover] = temp
+
+# output to a csv file
+# print(mover_range)
+file_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_range.csv"
+f = open(file_path, 'w')
+csv_writer = csv.writer(f)
+csv_writer.writerow(attr_fn)
+for i, key in enumerate(mover_range):
+    csv_writer.writerow([key] + mover_range[key])
+
+f.close()
