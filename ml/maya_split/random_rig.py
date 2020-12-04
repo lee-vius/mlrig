@@ -2,9 +2,9 @@ import csv
 import scipy.stats as stats
 
 # input file -- store the range of each attribute
-rest_rig_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_range_fix.csv"
+rest_rig_path = "D:\ACG\project\ml\maya_split\gen_data\mover_range_fix.csv"
 # output path -- a folder to store rigged results
-out_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged/"
+out_path = "D:\ACG\project\ml\maya_split\gen_data\mover_rigged/"
 
 def read_rest_rig(input_file=rest_rig_path):
     # read in the csv file
@@ -57,5 +57,6 @@ def gen_random_rig(distri_scale=2.0, input_file=rest_rig_path, file_path=out_pat
     f.close()
 
 if __name__ == "__main__":
+    print("running")
     for i in range(100):
         gen_random_rig(file_code=i)

@@ -9,7 +9,9 @@ import numpy
 # from util.py import *
 
 # the folder containing rigged parameters
-input_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged/"
+input_path = "D:\ACG\project\ml\maya_split\gen_data\mover_rigged/"
+temp_path = "D:\ACG\project\ml\maya_split\gen_data/temp_data/"
+out_path = "D:\ACG\project\ml\maya_split\gen_data\data_set/"
 
 filename = "rigged0.csv"
 
@@ -20,58 +22,6 @@ SKIN_TYPES = ['skinCluster']
 
 MESH = "Mery_geo_cn_body"
 PRECISION = 8
-
-# Use this when need batch generating
-# filenames = []
-# for root, dirs, files in os.walk(input_path):
-#     filenames.append(files)
-
-# read in the csv file
-f = open(input_path + filename, 'r')
-reader = list(csv.reader(f))
-# set attribute values to model
-attribute = reader[0][1:]
-for line in reader[1:]:
-    mover = line[0]
-    # set each attribute
-    for i, value in enumerate(line[1:]):
-        # check the attribute locked or not
-        if mc.getAttr(mover + '.' + attribute[i], l=True):
-            continue
-        mc.setAttr(mover + '.' + attribute[i], float(value))
-
-# TODO: model is posed randomly
-# need to extract other information like mesh info
-curr_data = {}
-curr_data['worldPos'] = {}
-curr_data['worldOffset'] = {}
-curr_data['localOffset'] = {}
-# Get the mesh vertex world information throuth following steps
-meshShape, positions, curr_data['worldPos'] = get_worldPos(MESH, PRECISION)
-# Create a duplicate
-duplicate = mc.duplicate(
-        MESH,
-        name=MESH + 'Dup',
-        upstreamNodes=False,
-        returnRootsOnly=True
-    )[0]
-# Create deformers
-deformers = prep_mesh(MESH)
-deformer_env_dict = {}
-for deformer in deformers:
-    dtype = mc.nodeType(deformer)
-    if dtype not in SKIN_TYPES:
-        deformer_env_dict[deformer] = mc.getAttr(deformer + '.envelope')
-        mc.setAttr(deformer + '.envelope', 0.0)
-# Get mesh linear postions
-linear_pos, curr_data['worldOffset'] = get_worldOffset(MESH, PRECISION, meshShape, positions)
-
-# Get local offset before linear skin blending
-offsets = get_localOffset(MESH, duplicate, TEMP_BS_NODE, TEMP_TARGET)
-vertex_count = len(curr_data['worldPos'])
-for i in range(vertex_count):
-    offset = offsets.get(i, [0.0, 0.0, 0.0])
-    curr_data['localOffset'][i] = [round(data, PRECISION) for data in offset]
 
 
 def prep_mesh(mesh):
@@ -206,7 +156,7 @@ def makeLinearCorrective(offsetVec, blendShapeNode, targetName, deformedGeometry
 
     # remove any invalid inverseMatrices from consideration
     offsetVecToUse = []
-    invShapeMatricesToUse = []
+    invShapeMatricesToUse = {}
     resultIndToUse = []
     for index, ov in itertools.izip(resultInd, offsetVec):
         if index in nonInvertablePointsSet:
@@ -427,7 +377,7 @@ def setBlendShapeData(node,
     shapeAliasLookup = getShapeAliasLookup(node)
 
     if not 'shapes' in shapeData:
-        print(procedureName + ':  shapeData does not have a "shapes" key.  Returning now...')
+        print("procedureName" + ':  shapeData does not have a "shapes" key.  Returning now...')
         return
 
     for shapeAlias in shapeData['shapes']:
@@ -505,3 +455,72 @@ def getShapeAliasLookup(node):
                 aliasLookup['[' + str(weightIndex) + ']'] = weightIndex
 
     return aliasLookup
+
+
+# Use this when need batch generating
+# filenames = []
+# for root, dirs, files in os.walk(input_path):
+#     filenames.append(files)
+
+# read in the csv file
+f = open(input_path + filename, 'r')
+reader = list(csv.reader(f))
+# set attribute values to model
+attribute = reader[0][1:]
+for line in reader[1:]:
+    mover = line[0]
+    # set each attribute
+    for i, value in enumerate(line[1:]):
+        # check the attribute locked or not
+        if mc.getAttr(mover + '.' + attribute[i], l=True):
+            continue
+        mc.setAttr(mover + '.' + attribute[i], float(value))
+
+# TODO: model is posed randomly
+# need to extract other information like mesh info
+curr_data = {}
+curr_data['worldPos'] = {}
+curr_data['worldOffset'] = {}
+curr_data['localOffset'] = {}
+# Get the mesh vertex world information throuth following steps
+meshShape, positions, curr_data['worldPos'] = get_worldPos(MESH, PRECISION)
+# Create a duplicate
+duplicate = mc.duplicate(
+        MESH,
+        name=MESH + 'Dup',
+        upstreamNodes=False,
+        returnRootsOnly=True
+    )[0]
+# Create deformers
+deformers = prep_mesh(MESH)
+deformer_env_dict = {}
+for deformer in deformers:
+    dtype = mc.nodeType(deformer)
+    if dtype not in SKIN_TYPES:
+        deformer_env_dict[deformer] = mc.getAttr(deformer + '.envelope')
+        mc.setAttr(deformer + '.envelope', 0.0)
+# Get mesh linear postions
+linear_pos, curr_data['worldOffset'] = get_worldOffset(MESH, PRECISION, meshShape, positions)
+
+# Get local offset before linear skin blending
+offsets = get_localOffset(MESH, duplicate, TEMP_BS_NODE, TEMP_TARGET)
+vertex_count = len(curr_data['worldPos'])
+for i in range(vertex_count):
+    offset = offsets.get(i, [0.0, 0.0, 0.0])
+    curr_data['localOffset'][i] = [round(data, PRECISION) for data in offset]
+
+# Write the three position info to temp files
+# TODO: shut down this part if not needed
+f1 = open(temp_path + "worldPos.csv", 'w')
+f2 = open(temp_path + "worldOffset.csv", 'w')
+f3 = open(temp_path + "localOffset.csv", 'w')
+csv_writer1 = csv.writer(f1)
+csv_writer2 = csv.writer(f2)
+csv_writer3 = csv.writer(f3)
+for index, key in enumerate(curr_data['worldPos']):
+    csv_writer1.writerow([key] + curr_data['worldPos'][key])
+    csv_writer2.writerow([key] + curr_data['worldOffset'][key])
+    csv_writer3.writerow([key] + curr_data['localOffset'][key])
+f1.close()
+f2.close()
+f3.close()
