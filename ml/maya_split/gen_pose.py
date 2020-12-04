@@ -475,6 +475,7 @@ for line in reader[1:]:
         if mc.getAttr(mover + '.' + attribute[i], l=True):
             continue
         mc.setAttr(mover + '.' + attribute[i], float(value))
+f.close()
 
 # TODO: model is posed randomly
 # need to extract other information like mesh info
