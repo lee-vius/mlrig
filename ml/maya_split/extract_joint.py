@@ -12,7 +12,7 @@ def get_joint_relation(filename="joint_relation.csv"):
     for index, joint in enumerate(joints):
         parent = mc.listRelatives(joint, parent=True, type="joint")
         if not parent:
-            parent = []
+            parent = [""]
         csv_writer.writerow([index] + [joint] + parent)
     f.close()
 

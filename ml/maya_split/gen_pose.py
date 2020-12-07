@@ -9,13 +9,13 @@ import numpy
 # from util.py import *
 
 # the folder containing rigged parameters
-input_path = "D:\ACG\project\ml\maya_split\gen_data\mover_rigged/"
-temp_path = "D:\ACG\project\ml\maya_split\gen_data/temp_data/"
-out_path = "D:\ACG\project\ml\maya_split\gen_data\data_set/"
+input_path = "D:/ACG/project/ml/maya_split/gen_data/mover_rigged/"
+temp_path = "D:/ACG/project/ml/maya_split/gen_data/temp_data/"
+out_path = "D:/ACG/project/ml/maya_split/gen_data/data_set/"
 
-topology_path = "D:\ACG\project\ml\maya_split\gen_data/topology_Mery_geo_cn_body.csv"
-anchor_path = "D:\ACG\project\ml\maya_split\gen_data/face_anchor.csv"
-joint_path = "D:\ACG\project\ml\maya_split\gen_data/joint_relation.csv"
+topology_path = "D:/ACG/project/ml/maya_split/gen_data/topology_Mery_geo_cn_body.csv"
+anchor_path = "D:/ACG/project/ml/maya_split/gen_data/face_anchor.csv"
+joint_path = "D:/ACG/project/ml/maya_split/gen_data/joint_relation.csv"
 
 filename = "rigged0.csv"
 
