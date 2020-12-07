@@ -15,6 +15,7 @@ out_path = "D:\ACG\project\ml\maya_split\gen_data\data_set/"
 
 topology_path = "D:\ACG\project\ml\maya_split\gen_data/topology_Mery_geo_cn_body.csv"
 anchor_path = "D:\ACG\project\ml\maya_split\gen_data/face_anchor.csv"
+joint_path = "D:\ACG\project\ml\maya_split\gen_data/joint_relation.csv"
 
 filename = "rigged0.csv"
 
@@ -476,37 +477,109 @@ def pose_rig(filename):
                 continue
             mc.setAttr(mover + '.' + attribute[i], float(value))
     f.close()
-    
+
+
 # Use this when need batch generating
 # filenames = []
 # for root, dirs, files in os.walk(input_path):
 #     filenames.append(files)
 
 # read in the csv file
-f = open(input_path + filename, 'r')
-reader = list(csv.reader(f))
-# set attribute values to model
-attribute = reader[0][1:]
-for line in reader[1:]:
-    mover = line[0]
-    # set each attribute
-    for i, value in enumerate(line[1:]):
-        # check the attribute locked or not
-        if mc.getAttr(mover + '.' + attribute[i], l=True):
-            continue
-        mc.setAttr(mover + '.' + attribute[i], float(value))
-f.close()
+pose_rig(filename)
 
 # TODO: model is posed randomly
 # need to extract other information like mesh info
 curr_data = {}
 curr_data['connectionMap'] = {}
 curr_data['anchorIndex'] = []
+curr_data['joint_dict'] = {}
+
 curr_data['anchorPoints'] = {}
 curr_data['differentialOffset'] = {}
 curr_data['worldPos'] = {}
 curr_data['worldOffset'] = {}
 curr_data['localOffset'] = {}
+curr_data['jointWorldMatrix'] = {}
+curr_data['jointWorldQuaternion'] = {}
+curr_data['jointLocalMatrix'] = {}
+curr_data['jointLocalQuaternion'] = {}
+
+# Read in the connection map
+f = open(topology_path, 'r')
+reader = csv.reader(f)
+content = list(reader)
+for line in content:
+    if len(line) > 1:
+        curr_data['connectionMap'][int(line[0])] = [int(c) for c in line[1:]]
+    else:
+        curr_data['connectionMap'][int(line[0])] = []
+f.close()
+
+# Read in the anchor points
+f = open(anchor_path, 'r')
+reader = csv.reader(f)
+content = list(reader)
+curr_data['anchorIndex'] = [int(line[0]) for line in content[1:]]
+f.close()
+
+# Read in the joint relations
+f = open(joint_path, 'r')
+reader = csv.reader(f)
+content = list(reader)
+for line in content:
+    curr_data['joint_dict'][line[1]] = line[2]
+f.close()
+
+# Get the joint worldMatrix and worldQuaternion
+world_mats = {}
+for jnt in curr_data['joint_dict']:
+    world_mat = mc.getAttr(jnt + '.worldMatrix[0]')
+    world_mats[jnt] = world_mat
+
+    wm = om.MTransformationMatrix(om.MMatrix(world_mat))
+    quaternion = wm.rotation(asQuaternion=True)
+
+    temp = [
+        world_mat[0], world_mat[1], world_mat[2],
+        world_mat[4], world_mat[5], world_mat[6],
+        world_mat[8], world_mat[9], world_mat[10],
+        world_mat[12], world_mat[13], world_mat[14]
+    ]
+    curr_data['jointWorldMatrix'][jnt] = [round(i, PRECISION) for i in temp]
+
+    temp = [
+        quaternion[0], quaternion[1], quaternion[2], quaternion[3],
+        world_mat[12], world_mat[13], world_mat[14]
+    ]
+    curr_data['jointWorldQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
+
+# Get the joint local matrix and local quaternion
+for jnt in curr_data['joint_dict']:
+    parent = curr_data['joint_dict'][jnt]
+    local_mat = None
+    if parent:
+        parent_mat = om.MMatrix(world_mats[parent])
+        world_mat = om.MMatrix(world_mats[jnt])
+        local_mat = world_mat * parent_mat.inverse()
+    else:
+        local_mat = om.MMatrix(world_mats[jnt])
+
+    lm = om.MTransformationMatrix(local_mat)
+    quaternion = lm.rotation(asQuaternion=True)
+
+    temp = [
+        local_mat[0], local_mat[1], local_mat[2],
+        local_mat[4], local_mat[5], local_mat[6],
+        local_mat[8], local_mat[9], local_mat[10],
+        local_mat[12], local_mat[13], local_mat[14]
+    ]
+    curr_data['jointLocalMatrix'][jnt] = [round(i, PRECISION) for i in temp]
+
+    temp = [quaternion[0], quaternion[1], quaternion[2], quaternion[3],
+            local_mat[12], local_mat[13], local_mat[14]]
+    curr_data['jointLocalQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
+
+
 # Get the mesh vertex world information throuth following steps
 meshShape, positions, curr_data['worldPos'] = get_worldPos(MESH, PRECISION)
 # Create a duplicate
@@ -549,24 +622,6 @@ for i in range(vertex_count):
 # f1.close()
 # f2.close()
 # f3.close()
-
-# Read in the connection map
-f = open(topology_path, 'r')
-reader = csv.reader(f)
-content = list(reader)
-for line in content:
-    if len(line) > 1:
-        curr_data['connectionMap'][int(line[0])] = [int(c) for c in line[1:]]
-    else:
-        curr_data['connectionMap'][int(line[0])] = []
-f.close()
-
-# Read in the anchor points
-f = open(anchor_path, 'r')
-reader = csv.reader(f)
-content = list(reader)
-curr_data['anchorIndex'] = [int(line[0]) for line in content[1:]]
-f.close()
 
 # Generate the differential offset data
 for i in range(len(curr_data['connectionMap'])):
