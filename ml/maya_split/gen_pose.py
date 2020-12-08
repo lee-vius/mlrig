@@ -461,7 +461,6 @@ def getShapeAliasLookup(node):
     return aliasLookup
 
 
-
 def pose_rig(filename):
     # Pose the character with given parameters
     f = open(input_path + filename, 'r')
@@ -479,6 +478,31 @@ def pose_rig(filename):
     f.close()
 
 
+def retreive_data(curr_data, filename):
+    # output data to csv files
+    for key, item in curr_data.items():
+        f = open(temp_path + key + ".csv", 'w')
+        csv_writer = csv.writer(f)
+        for k, it in item.items():
+            csv_writer.writerow([k] + it)
+        f.close()
+        # Write the three position info to temp files
+        # TODO: shut down this part if not needed
+        # f1 = open(temp_path + "worldPos.csv", 'w')
+        # f2 = open(temp_path + "worldOffset.csv", 'w')
+        # f3 = open(temp_path + "localOffset.csv", 'w')
+        # csv_writer1 = csv.writer(f1)
+        # csv_writer2 = csv.writer(f2)
+        # csv_writer3 = csv.writer(f3)
+        # for index, key in enumerate(curr_data['worldPos']):
+        #     csv_writer1.writerow([key] + curr_data['worldPos'][key])
+        #     csv_writer2.writerow([key] + curr_data['worldOffset'][key])
+        #     csv_writer3.writerow([key] + curr_data['localOffset'][key])
+        # f1.close()
+        # f2.close()
+        # f3.close()
+
+
 # Use this when need batch generating
 # filenames = []
 # for root, dirs, files in os.walk(input_path):
@@ -490,9 +514,9 @@ pose_rig(filename)
 # TODO: model is posed randomly
 # need to extract other information like mesh info
 curr_data = {}
-curr_data['connectionMap'] = {}
-curr_data['anchorIndex'] = []
-curr_data['joint_dict'] = {}
+connectionMap = {}
+anchorIndex = []
+joint_dict = {}
 
 curr_data['anchorPoints'] = {}
 curr_data['differentialOffset'] = {}
@@ -510,16 +534,16 @@ reader = csv.reader(f)
 content = list(reader)
 for line in content:
     if len(line) > 1:
-        curr_data['connectionMap'][int(line[0])] = [int(c) for c in line[1:]]
+        connectionMap[int(line[0])] = [int(c) for c in line[1:]]
     else:
-        curr_data['connectionMap'][int(line[0])] = []
+        connectionMap[int(line[0])] = []
 f.close()
 
 # Read in the anchor points
 f = open(anchor_path, 'r')
 reader = csv.reader(f)
 content = list(reader)
-curr_data['anchorIndex'] = [int(line[0]) for line in content[1:]]
+anchorIndex = [int(line[0]) for line in content[1:]]
 f.close()
 
 # Read in the joint relations
@@ -527,12 +551,12 @@ f = open(joint_path, 'r')
 reader = csv.reader(f)
 content = list(reader)
 for line in content:
-    curr_data['joint_dict'][line[1]] = line[2]
+    joint_dict[line[1]] = line[2]
 f.close()
 
 # Get the joint worldMatrix and worldQuaternion
 world_mats = {}
-for jnt in curr_data['joint_dict']:
+for jnt in joint_dict:
     world_mat = mc.getAttr(jnt + '.worldMatrix[0]')
     world_mats[jnt] = world_mat
 
@@ -554,8 +578,8 @@ for jnt in curr_data['joint_dict']:
     curr_data['jointWorldQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
 
 # Get the joint local matrix and local quaternion
-for jnt in curr_data['joint_dict']:
-    parent = curr_data['joint_dict'][jnt]
+for jnt in joint_dict:
+    parent = joint_dict[jnt]
     local_mat = None
     if parent:
         parent_mat = om.MMatrix(world_mats[parent])
@@ -607,25 +631,9 @@ for i in range(vertex_count):
     offset = offsets.get(i, [0.0, 0.0, 0.0])
     curr_data['localOffset'][i] = [round(data, PRECISION) for data in offset]
 
-# Write the three position info to temp files
-# TODO: shut down this part if not needed
-# f1 = open(temp_path + "worldPos.csv", 'w')
-# f2 = open(temp_path + "worldOffset.csv", 'w')
-# f3 = open(temp_path + "localOffset.csv", 'w')
-# csv_writer1 = csv.writer(f1)
-# csv_writer2 = csv.writer(f2)
-# csv_writer3 = csv.writer(f3)
-# for index, key in enumerate(curr_data['worldPos']):
-#     csv_writer1.writerow([key] + curr_data['worldPos'][key])
-#     csv_writer2.writerow([key] + curr_data['worldOffset'][key])
-#     csv_writer3.writerow([key] + curr_data['localOffset'][key])
-# f1.close()
-# f2.close()
-# f3.close()
-
 # Generate the differential offset data
-for i in range(len(curr_data['connectionMap'])):
-    neighbors = curr_data['connectionMap'][i]
+for i in range(len(connectionMap)):
+    neighbors = connectionMap[i]
     valence = float(len(neighbors))
     new_coord = offsets.get(i, [0.0, 0.0, 0.0])
     neighbor_values = [0.0, 0.0, 0.0]
@@ -643,7 +651,7 @@ for i in range(len(curr_data['connectionMap'])):
     curr_data['differentialOffset'][i] = [round(data, PRECISION) for data in offset]
 
 # Get the anchor points data
-for anchor in curr_data['anchorIndex']:
+for anchor in anchorIndex:
     offset = offsets.get(anchor, [0.0, 0.0, 0.0])
     curr_data['anchorPoints'][anchor] = [round(data, PRECISION) for data in offset]
 
