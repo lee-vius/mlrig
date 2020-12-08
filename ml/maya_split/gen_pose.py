@@ -480,8 +480,11 @@ def pose_rig(filename):
 
 def retreive_data(curr_data, filename):
     # output data to csv files
+    new_path = temp_path + filename[:-4]
+    if not os.path.exists(new_path):
+        os.mkdir(new_path)
     for key, item in curr_data.items():
-        f = open(temp_path + key + ".csv", 'w')
+        f = open(new_path + '/' + key + ".csv", 'w')
         csv_writer = csv.writer(f)
         for k, it in item.items():
             csv_writer.writerow([k] + it)
@@ -661,3 +664,5 @@ for deformer in deformers:
     if dtype not in SKIN_TYPES:
         mc.setAttr(deformer + '.envelope', deformer_env_dict[deformer])
 mc.delete(duplicate)
+
+retreive_data(curr_data, filename)
