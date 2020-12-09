@@ -447,7 +447,6 @@ def getShapeAliasLookup(node):
     Builds a lookup dictionary that maps a blendShape node's weight
     attribute alias name to the weight attribute's index.
     """
-
     aliasLookup = {}
     weightIndices = mc.getAttr(node + ".weight", mi=True)
     if weightIndices:
@@ -461,9 +460,9 @@ def getShapeAliasLookup(node):
     return aliasLookup
 
 
-def pose_rig(filename):
+def pose_rig(file_name):
     # Pose the character with given parameters
-    f = open(input_path + filename, 'r')
+    f = open(input_path + file_name, 'r')
     reader = list(csv.reader(f))
     # set attribute values to model
     attribute = reader[0][1:]
@@ -478,6 +477,50 @@ def pose_rig(filename):
     f.close()
 
 
+def read_in_data(filepath):
+    # get the data files to read
+    files = []
+    for root, dirs, fs in os.walk(filepath):
+        files = fs
+    # read in the result
+    pose_data = {}
+    for file_name in files:
+        # for each file, read in as a dict
+        f = open(filepath + '/' + file_name, 'r')
+        temp = {}
+        reader = csv.reader(f)
+        content = list(reader)
+        if file_name[:-4] in ['anchorPoints', 'differentialOffset', 'localOffset', 'worldOffset', 'worldPos']:
+            for line in content:
+                temp[int(line[0])] = [float(coord) for coord in line[1:]]
+        elif file_name[:-4] in ['jointLocalMatrix', 'jointLocalQuaternion', 'jointWorldMatrix', 'jointWorldQuaternion']:
+            for line in content:
+                temp[line[0]] = [float(coord) for coord in line[1:]]
+        else:
+            for line in content:
+                temp[line[0]] = line[1:]
+        f.close()
+        pose_data[file_name[:-4]] = temp
+
+    return pose_data
+
+
+def read_in_rig(filepath):
+    # read in the result as a dict
+    f = open(filepath, 'r')
+    reader = list(csv.reader(f))
+    pose_rig = {}
+    # get the attribute to set
+    attribute = reader[0][1:]
+    for line in reader[1:]:
+        mover = line[0]
+        # get each attribute
+        for i, value in enumerate(line[1:]):
+            pose_rig[mover + '.' + attribute[i]] = float(value)
+    f.close()
+    return pose_rig
+
+
 def retreive_data(curr_data, filename):
     # output data to csv files
     new_path = temp_path + filename[:-4]
@@ -489,21 +532,36 @@ def retreive_data(curr_data, filename):
         for k, it in item.items():
             csv_writer.writerow([k] + it)
         f.close()
-        # Write the three position info to temp files
-        # TODO: shut down this part if not needed
-        # f1 = open(temp_path + "worldPos.csv", 'w')
-        # f2 = open(temp_path + "worldOffset.csv", 'w')
-        # f3 = open(temp_path + "localOffset.csv", 'w')
-        # csv_writer1 = csv.writer(f1)
-        # csv_writer2 = csv.writer(f2)
-        # csv_writer3 = csv.writer(f3)
-        # for index, key in enumerate(curr_data['worldPos']):
-        #     csv_writer1.writerow([key] + curr_data['worldPos'][key])
-        #     csv_writer2.writerow([key] + curr_data['worldOffset'][key])
-        #     csv_writer3.writerow([key] + curr_data['localOffset'][key])
-        # f1.close()
-        # f2.close()
-        # f3.close()
+
+
+def reconstruction(training_type='differential', ground_truth=False):
+    # set the deformers
+    BLENDSHAPE = TEMP_BS_NODE
+    mesh = mc.deformer(BLENDSHAPE, query=True, geometry=True)[0]
+    print(mesh)
+
+    # read in data for reconstruction
+    pose_rig = read_in_rig(input_path + filename)
+    pose_data = read_in_data(temp_path + filename[:-4])
+
+    # pose the rig first
+    for mover in pose_rig:
+        if mc.getAttr(mover, l=True):
+            continue
+        mc.setAttr(mover, float(pose_rig[mover]))
+
+    # get shape data
+    shape_data = getEmptyShapeData()
+    shape_data['shapes'][TEMP_TARGET] = getEmptyShape()
+
+    # reconstruct the local offset type
+    if training_type == 'local_offset':
+        cur_offset_data = pose_data['localOffset']
+        for vtx_id in cur_offset_data:
+            shape_data['shapes'][TEMP_TARGET]['offsets'][vtx_id] = cur_offset_data[vtx_id]
+
+    setBlendShapeData(BLENDSHAPE, shape_data, shapes=[TEMP_TARGET])
+    mc.setAttr(BLENDSHAPE + '.' + TEMP_TARGET, 1.0)
 
 
 # Use this when need batch generating
@@ -619,6 +677,7 @@ duplicate = mc.duplicate(
 # Create deformers
 deformers = prep_mesh(MESH)
 deformer_env_dict = {}
+# shutdown all deformers except for skin clusters
 for deformer in deformers:
     dtype = mc.nodeType(deformer)
     if dtype not in SKIN_TYPES:
@@ -666,3 +725,5 @@ for deformer in deformers:
 mc.delete(duplicate)
 
 retreive_data(curr_data, filename)
+
+# reconstruction(training_type="local_offset")

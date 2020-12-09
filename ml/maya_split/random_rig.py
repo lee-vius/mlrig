@@ -44,12 +44,12 @@ def gen_random_rig(distri_scale=2.0, input_file=rest_rig_path, file_path=out_pat
         for i, attr in enumerate(rig_range):
             # attr[0] is minimal and attr[1] is maximal
             value = attr[0] + (attr[1] - attr[0]) * (distr[i] + distri_scale) / (distri_scale * 2.0)
-            new_value.append(value)
-        
+            new_value.append(round(value, 8))
+
         data[mover] = new_value
-    
+
     # output csv file
-    f = open(file_path + 'rigged' + str(file_code) + '.csv', 'w')
+    f = open(file_path + 'rigged' + str(file_code) + '.csv', 'w', encoding="utf-8", newline="")
     csv_writer = csv.writer(f)
     csv_writer.writerow(['mover'] + attributes)
     for i, key in enumerate(data):
