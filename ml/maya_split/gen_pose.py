@@ -115,6 +115,7 @@ def get_localOffset(resultMesh, sculptMesh, blendShapeNode=TEMP_BS_NODE, targetN
     weightAttr = '%s.%s' % (blendShapeNode, targetName)
     if mc.objExists(weightAttr):
         targetWeight = mc.getAttr(weightAttr)
+        print("targetWeight: " + targetWeight)
         mc.setAttr(weightAttr, 0.0)
     resultPos = getPositions(resultMesh)
     sculptPos = getPositions(sculptMesh)
@@ -452,9 +453,23 @@ def setShapeData(node,
     :param dict shapeData: the shape data to apply to the node.
     :param list shapes: if given, only modify given target names
     """
+    targetName = None
+    if shapes:
+        targetName = shapes[0]
+    if not mc.objExists('%s.%s' % (node, targetName)):
+        shapeIndex = 0
+        weightIndices = mc.getAttr(node + ".weight", multiIndices=True)
+        if weightIndices:
+            shapeIndex = weightIndices[-1] + 1
+        attr = '%s.weight[%i]' % (node, shapeIndex)
+        mc.getAttr(attr)
+        mc.aliasAttr(targetName, attr)
+        mc.setAttr(attr, 1.0)
+
     nodeType = mc.nodeType(node)
     inputShape = mc.deformer(node, g=True, q=True)
     shapeAliasLookup = getShapeAliasLookup(node)
+    print(shapeAliasLookup)
 
     if not 'shapes' in shapeData:
         print("procedureName" + ':  shapeData does not have a "shapes" key.  Returning now...')
@@ -463,38 +478,24 @@ def setShapeData(node,
     for shapeAlias in shapeData['shapes']:
         if shapes and shapeAlias not in shapes:
             continue
+        print(shapeAlias)
 
         # read the information stored for this shape
         targetData = shapeData['shapes'][shapeAlias]
         targetOffsets = targetData["offsets"]
         targetWeights = targetData["weights"]
         shapeIndex = shapeAliasLookup.get(shapeAlias, None)
-
-        # if the shape doesn't already exist, create it at the end of the list
-        newShape = False
-        if shapeIndex is None:
-            newShape = True
-            weightIndices = mc.getAttr(node + ".weight", mi=True)
-            if weightIndices is None:
-                shapeIndex = 0
-            else:
-                shapeIndex = weightIndices[-1] + 1
-
-            mc.addMultiInstance(node + '.weight[' + str(shapeIndex) + ']')
-            if shapeAlias[0] != '[':
-                mc.aliasAttr(shapeAlias.strip(), node + ".weight[" + str(shapeIndex) + "]")
+        print('shapeIndex: ' + str(shapeIndex))
 
         # iterate through the offset dictionary
         pointList = []
         componentList = []
-        #speed optimization
-        shapeComponentsToUse = {}
-        
+
         for pointIndex in targetOffsets:
-            pointData = targetOffsets[pointIndex]                       
+            pointData = targetOffsets[pointIndex]
             pointList.append((pointData[0], pointData[1], pointData[2], 1.0))
             componentList.append('vtx[' + str(pointIndex) + ']')
-        
+
         # create the element by calling getAttr
         try:
             mc.getAttr(node + '.inputTarget[' + str(inputIndex) + ']')
@@ -612,6 +613,15 @@ def retreive_data(curr_data, filename):
 
 
 def reconstruction(training_type='differential', ground_truth=False):
+    # Create deformers
+    deformers = prep_mesh(MESH)
+    deformer_env_dict = {}
+    # shutdown all deformers except for skin clusters
+    for deformer in deformers:
+        dtype = mc.nodeType(deformer)
+        if dtype not in SKIN_TYPES:
+            deformer_env_dict[deformer] = mc.getAttr(deformer + '.envelope')
+            mc.setAttr(deformer + '.envelope', 0.0)
     # set the deformers
     BLENDSHAPE = TEMP_BS_NODE
     mesh = mc.deformer(BLENDSHAPE, query=True, geometry=True)[0]
@@ -647,160 +657,163 @@ def reconstruction(training_type='differential', ground_truth=False):
 #     filenames.append(files)
 
 # read in the csv file
-pose_rig(filename)
+# pose_rig(filename)
+#
+# # TODO: model is posed randomly
+# # need to extract other information like mesh info
+# curr_data = {}
+# connectionMap = {}
+# anchorIndex = []
+# joint_dict = {}
+#
+# curr_data['anchorPoints'] = {}
+# curr_data['differentialOffset'] = {}
+# curr_data['worldPos'] = {}
+# curr_data['worldOffset'] = {}
+# curr_data['localOffset'] = {}
+# curr_data['jointWorldMatrix'] = {}
+# curr_data['jointWorldQuaternion'] = {}
+# curr_data['jointLocalMatrix'] = {}
+# curr_data['jointLocalQuaternion'] = {}
+#
+# # Read in the connection map
+# f = open(topology_path, 'r')
+# reader = csv.reader(f)
+# content = list(reader)
+# for line in content:
+#     if len(line) > 1:
+#         connectionMap[int(line[0])] = [int(c) for c in line[1:]]
+#     else:
+#         connectionMap[int(line[0])] = []
+# f.close()
+#
+# # Read in the anchor points
+# f = open(anchor_path, 'r')
+# reader = csv.reader(f)
+# content = list(reader)
+# anchorIndex = [int(line[0]) for line in content[1:]]
+# f.close()
+#
+# # Read in the joint relations
+# f = open(joint_path, 'r')
+# reader = csv.reader(f)
+# content = list(reader)
+# for line in content:
+#     joint_dict[line[1]] = line[2]
+# f.close()
+#
+# # Get the joint worldMatrix and worldQuaternion
+# world_mats = {}
+# for jnt in joint_dict:
+#     world_mat = mc.getAttr(jnt + '.worldMatrix[0]')
+#     world_mats[jnt] = world_mat
+#
+#     wm = om.MTransformationMatrix(om.MMatrix(world_mat))
+#     quaternion = wm.rotation(asQuaternion=True)
+#
+#     temp = [
+#         world_mat[0], world_mat[1], world_mat[2],
+#         world_mat[4], world_mat[5], world_mat[6],
+#         world_mat[8], world_mat[9], world_mat[10],
+#         world_mat[12], world_mat[13], world_mat[14]
+#     ]
+#     curr_data['jointWorldMatrix'][jnt] = [round(i, PRECISION) for i in temp]
+#
+#     temp = [
+#         quaternion[0], quaternion[1], quaternion[2], quaternion[3],
+#         world_mat[12], world_mat[13], world_mat[14]
+#     ]
+#     curr_data['jointWorldQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
+#
+# # Get the joint local matrix and local quaternion
+# for jnt in joint_dict:
+#     parent = joint_dict[jnt]
+#     local_mat = None
+#     if parent:
+#         parent_mat = om.MMatrix(world_mats[parent])
+#         world_mat = om.MMatrix(world_mats[jnt])
+#         local_mat = world_mat * parent_mat.inverse()
+#     else:
+#         local_mat = om.MMatrix(world_mats[jnt])
+#
+#     lm = om.MTransformationMatrix(local_mat)
+#     quaternion = lm.rotation(asQuaternion=True)
+#
+#     temp = [
+#         local_mat[0], local_mat[1], local_mat[2],
+#         local_mat[4], local_mat[5], local_mat[6],
+#         local_mat[8], local_mat[9], local_mat[10],
+#         local_mat[12], local_mat[13], local_mat[14]
+#     ]
+#     curr_data['jointLocalMatrix'][jnt] = [round(i, PRECISION) for i in temp]
+#
+#     temp = [quaternion[0], quaternion[1], quaternion[2], quaternion[3],
+#             local_mat[12], local_mat[13], local_mat[14]]
+#     curr_data['jointLocalQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
+#
+#
+# # Get the mesh vertex world information throuth following steps
+# meshShape, positions, curr_data['worldPos'] = get_worldPos(MESH, PRECISION)
+# # Create a duplicate
+# duplicate = mc.duplicate(
+#         MESH,
+#         name=MESH + 'Dup',
+#         upstreamNodes=False,
+#         returnRootsOnly=True
+#     )[0]
+# # Create deformers
+# deformers = prep_mesh(MESH)
+# deformer_env_dict = {}
+# # shutdown all deformers except for skin clusters
+# for deformer in deformers:
+#     dtype = mc.nodeType(deformer)
+#     if dtype not in SKIN_TYPES:
+#         deformer_env_dict[deformer] = mc.getAttr(deformer + '.envelope')
+#         mc.setAttr(deformer + '.envelope', 0.0)
+# # Get mesh linear postions
+# linear_pos, curr_data['worldOffset'] = get_worldOffset(MESH, PRECISION, meshShape, positions)
+#
+# # Get local offset before linear skin blending
+# offsets = get_localOffset(MESH, duplicate, TEMP_BS_NODE, TEMP_TARGET)
+# vertex_count = len(curr_data['worldPos'])
+# for i in range(vertex_count):
+#     offset = offsets.get(i, [0.0, 0.0, 0.0])
+#     curr_data['localOffset'][i] = [round(data, PRECISION) for data in offset]
+#
+# # Generate the differential offset data
+# for i in range(len(connectionMap)):
+#     neighbors = connectionMap[i]
+#     valence = float(len(neighbors))
+#     new_coord = offsets.get(i, [0.0, 0.0, 0.0])
+#     neighbor_values = [0.0, 0.0, 0.0]
+#     for neighbor in neighbors:
+#         nb_coord = offsets.get(neighbor, [0.0, 0.0, 0.0])
+#         neighbor_values[0] += nb_coord[0]
+#         neighbor_values[1] += nb_coord[1]
+#         neighbor_values[2] += nb_coord[2]
+#
+#     x = new_coord[0] - neighbor_values[0] / valence
+#     y = new_coord[1] - neighbor_values[1] / valence
+#     z = new_coord[2] - neighbor_values[2] / valence
+#
+#     offset = [x, y, z]
+#     curr_data['differentialOffset'][i] = [round(data, PRECISION) for data in offset]
+#
+# # Get the anchor points data
+# for anchor in anchorIndex:
+#     offset = offsets.get(anchor, [0.0, 0.0, 0.0])
+#     curr_data['anchorPoints'][anchor] = [round(data, PRECISION) for data in offset]
+#
+# # Restore the rig
+# for deformer in deformers:
+#     dtype = mc.nodeType(deformer)
+#     if dtype not in SKIN_TYPES:
+#         mc.setAttr(deformer + '.envelope', deformer_env_dict[deformer])
+# mc.delete(duplicate)
+#
+# retreive_data(curr_data, filename)
 
-# TODO: model is posed randomly
-# need to extract other information like mesh info
-curr_data = {}
-connectionMap = {}
-anchorIndex = []
-joint_dict = {}
 
-curr_data['anchorPoints'] = {}
-curr_data['differentialOffset'] = {}
-curr_data['worldPos'] = {}
-curr_data['worldOffset'] = {}
-curr_data['localOffset'] = {}
-curr_data['jointWorldMatrix'] = {}
-curr_data['jointWorldQuaternion'] = {}
-curr_data['jointLocalMatrix'] = {}
-curr_data['jointLocalQuaternion'] = {}
-
-# Read in the connection map
-f = open(topology_path, 'r')
-reader = csv.reader(f)
-content = list(reader)
-for line in content:
-    if len(line) > 1:
-        connectionMap[int(line[0])] = [int(c) for c in line[1:]]
-    else:
-        connectionMap[int(line[0])] = []
-f.close()
-
-# Read in the anchor points
-f = open(anchor_path, 'r')
-reader = csv.reader(f)
-content = list(reader)
-anchorIndex = [int(line[0]) for line in content[1:]]
-f.close()
-
-# Read in the joint relations
-f = open(joint_path, 'r')
-reader = csv.reader(f)
-content = list(reader)
-for line in content:
-    joint_dict[line[1]] = line[2]
-f.close()
-
-# Get the joint worldMatrix and worldQuaternion
-world_mats = {}
-for jnt in joint_dict:
-    world_mat = mc.getAttr(jnt + '.worldMatrix[0]')
-    world_mats[jnt] = world_mat
-
-    wm = om.MTransformationMatrix(om.MMatrix(world_mat))
-    quaternion = wm.rotation(asQuaternion=True)
-
-    temp = [
-        world_mat[0], world_mat[1], world_mat[2],
-        world_mat[4], world_mat[5], world_mat[6],
-        world_mat[8], world_mat[9], world_mat[10],
-        world_mat[12], world_mat[13], world_mat[14]
-    ]
-    curr_data['jointWorldMatrix'][jnt] = [round(i, PRECISION) for i in temp]
-
-    temp = [
-        quaternion[0], quaternion[1], quaternion[2], quaternion[3],
-        world_mat[12], world_mat[13], world_mat[14]
-    ]
-    curr_data['jointWorldQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
-
-# Get the joint local matrix and local quaternion
-for jnt in joint_dict:
-    parent = joint_dict[jnt]
-    local_mat = None
-    if parent:
-        parent_mat = om.MMatrix(world_mats[parent])
-        world_mat = om.MMatrix(world_mats[jnt])
-        local_mat = world_mat * parent_mat.inverse()
-    else:
-        local_mat = om.MMatrix(world_mats[jnt])
-
-    lm = om.MTransformationMatrix(local_mat)
-    quaternion = lm.rotation(asQuaternion=True)
-
-    temp = [
-        local_mat[0], local_mat[1], local_mat[2],
-        local_mat[4], local_mat[5], local_mat[6],
-        local_mat[8], local_mat[9], local_mat[10],
-        local_mat[12], local_mat[13], local_mat[14]
-    ]
-    curr_data['jointLocalMatrix'][jnt] = [round(i, PRECISION) for i in temp]
-
-    temp = [quaternion[0], quaternion[1], quaternion[2], quaternion[3],
-            local_mat[12], local_mat[13], local_mat[14]]
-    curr_data['jointLocalQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
-
-
-# Get the mesh vertex world information throuth following steps
-meshShape, positions, curr_data['worldPos'] = get_worldPos(MESH, PRECISION)
-# Create a duplicate
-duplicate = mc.duplicate(
-        MESH,
-        name=MESH + 'Dup',
-        upstreamNodes=False,
-        returnRootsOnly=True
-    )[0]
-# Create deformers
-deformers = prep_mesh(MESH)
-deformer_env_dict = {}
-# shutdown all deformers except for skin clusters
-for deformer in deformers:
-    dtype = mc.nodeType(deformer)
-    if dtype not in SKIN_TYPES:
-        deformer_env_dict[deformer] = mc.getAttr(deformer + '.envelope')
-        mc.setAttr(deformer + '.envelope', 0.0)
-# Get mesh linear postions
-linear_pos, curr_data['worldOffset'] = get_worldOffset(MESH, PRECISION, meshShape, positions)
-
-# Get local offset before linear skin blending
-offsets = get_localOffset(MESH, duplicate, TEMP_BS_NODE, TEMP_TARGET)
-vertex_count = len(curr_data['worldPos'])
-for i in range(vertex_count):
-    offset = offsets.get(i, [0.0, 0.0, 0.0])
-    curr_data['localOffset'][i] = [round(data, PRECISION) for data in offset]
-
-# Generate the differential offset data
-for i in range(len(connectionMap)):
-    neighbors = connectionMap[i]
-    valence = float(len(neighbors))
-    new_coord = offsets.get(i, [0.0, 0.0, 0.0])
-    neighbor_values = [0.0, 0.0, 0.0]
-    for neighbor in neighbors:
-        nb_coord = offsets.get(neighbor, [0.0, 0.0, 0.0])
-        neighbor_values[0] += nb_coord[0]
-        neighbor_values[1] += nb_coord[1]
-        neighbor_values[2] += nb_coord[2]
-
-    x = new_coord[0] - neighbor_values[0] / valence
-    y = new_coord[1] - neighbor_values[1] / valence
-    z = new_coord[2] - neighbor_values[2] / valence
-
-    offset = [x, y, z]
-    curr_data['differentialOffset'][i] = [round(data, PRECISION) for data in offset]
-
-# Get the anchor points data
-for anchor in anchorIndex:
-    offset = offsets.get(anchor, [0.0, 0.0, 0.0])
-    curr_data['anchorPoints'][anchor] = [round(data, PRECISION) for data in offset]
-
-# Restore the rig
-for deformer in deformers:
-    dtype = mc.nodeType(deformer)
-    if dtype not in SKIN_TYPES:
-        mc.setAttr(deformer + '.envelope', deformer_env_dict[deformer])
-mc.delete(duplicate)
-
-retreive_data(curr_data, filename)
-
+# TODO: only start reconstruction when training is complete
+# As the deformer will be changed from default
 # reconstruction(training_type="local_offset")
