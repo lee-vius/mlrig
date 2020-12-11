@@ -222,7 +222,7 @@ def get_localOffset(resultMesh, sculptMesh, blendShapeNode=TEMP_BS_NODE, targetN
     weightAttr = '%s.%s' % (blendShapeNode, targetName)
     if mc.objExists(weightAttr):
         targetWeight = mc.getAttr(weightAttr)
-        print("targetWeight: " + targetWeight)
+        print("targetWeight: " + str(targetWeight))
         mc.setAttr(weightAttr, 0.0)
     resultPos = getPositions(resultMesh)
     sculptPos = getPositions(sculptMesh)
@@ -719,7 +719,7 @@ def retreive_data(curr_data, filename):
         f.close()
 
 
-def reconstruction(reconstrustor, training_type='differential', ground_truth=False):
+def reconstruction(reconstructor, training_type='differential', ground_truth=False):
     # Create deformers
     deformers = prep_mesh(MESH)
     deformer_env_dict = {}
@@ -787,7 +787,7 @@ def reconstruction(reconstrustor, training_type='differential', ground_truth=Fal
             # reorder coordinates based on reverse cuthill
             reordered_diff_coord = numpy.ndarray(shape=(col_ct, 1))
             for i in range(col_ct):
-                reordered_diff_coord[i] = modified_diff_coord[reconstrustor.REVERSE_CUTHILL[i]]
+                reordered_diff_coord[i] = modified_diff_coord[reconstructor.REVERSE_CUTHILL[i]]
 
             # back substitution to solve triangular matrices
             solve_coord = scipy.linalg.solve_triangular(reconstructor.CHOLESKY_MTX, reordered_diff_coord, lower=True, overwrite_b=True, check_finite=False)
@@ -795,7 +795,7 @@ def reconstruction(reconstrustor, training_type='differential', ground_truth=Fal
 
             real_coord = []
             for i in range(col_ct):
-                real_coord.append(solve_real_coord[reconstrustor.INVERSE_CMO[i]][0])
+                real_coord.append(solve_real_coord[reconstructor.INVERSE_CMO[i]][0])
 
             real_coords.append(real_coord)
 
@@ -973,4 +973,8 @@ def reconstruction(reconstrustor, training_type='differential', ground_truth=Fal
 # TODO: only start reconstruction when training is complete
 # As the deformer will be changed from default
 reconstructor = reconstru()
-reconstruction(reconstructor, training_type="local_offset")
+reconstruction(reconstructor, training_type="differential")
+curr_data = {}
+temp_path = test_path
+meshShape, positions, curr_data['worldPos'] = get_worldPos(MESH, PRECISION)
+retreive_data(curr_data, filename)
