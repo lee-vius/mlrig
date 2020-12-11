@@ -31,16 +31,108 @@ SKIN_TYPES = ['skinCluster']
 MESH = "Mery_geo_cn_body"
 PRECISION = 8
 
-# Variables for reconstruction
-# VALENCES = []
-# LAPLACIAN_VAL = []
-# LAPLACIAN_ROW = []
-# LAPLACIAN_COL = []
-# LAPLACIAN_MTX = None
-# REVERSE_CUTHILL = None
-# REVERSE_CUTHILL_MTX = None
-# INVERSE_CMO = None
-# CHOLESKY_MTX = None
+
+# Define a class containing data specially for reconstruction
+class reconstru():
+    def __init__(self):
+        # Variable denoting whether the matrices have been calculated
+        self.isCalculated = False
+        # Variables for reconstruction
+        self.VALENCES = []
+        self.LAPLACIAN_VAL = []
+        self.LAPLACIAN_ROW = []
+        self.LAPLACIAN_COL = []
+        self.LAPLACIAN_MTX = None
+        self.REVERSE_CUTHILL = None
+        self.REVERSE_CUTHILL_MTX = None
+        self.INVERSE_CMO = None
+        self.CHOLESKY_MTX = None
+
+    def cal_Lmatrice(self, pose_data):
+        # Calculate the laplacian matrix, cholesky matrix and reverse_cuthill_mckee_order
+        connectionMap = {}
+        # Read in the connection map
+        f = open(topology_path, 'r')
+        reader = csv.reader(f)
+        content = list(reader)
+        for line in content:
+            if len(line) > 1:
+                connectionMap[int(line[0])] = [int(c) for c in line[1:]]
+            else:
+                connectionMap[int(line[0])] = []
+        f.close()
+
+        # handle essential data
+        anchors = pose_data['anchorPoints']
+        differentials = pose_data['differentialOffset']
+        valences = []
+
+        num_vtx = len(differentials)
+        row = []
+        col = []
+        sparse_v = []
+
+        vid_dict = list(differentials.keys())
+
+        col_ct = num_vtx
+        row_ct = num_vtx + len(anchors)
+        for i, index in enumerate(differentials):
+            connected_vertices = connectionMap[index]
+            valence = float(len(connected_vertices))
+            valences.append(valence)
+
+            for j in range(num_vtx):
+                if i == j:
+                    row.append(i)
+                    col.append(j)
+                    sparse_v.append(valence)
+                elif vid_dict[j] in connected_vertices:
+                    row.append(i)
+                    col.append(j)
+                    sparse_v.append(-1.0)
+
+        for i, cur_anchor in enumerate(anchors):
+            for j, index in enumerate(differentials):
+                if index == cur_anchor:
+                    row.append(i + num_vtx)
+                    col.append(j)
+                    # This place need to fill the anchor weight, currently set as 1.0
+                    sparse_v.append(1.0)
+
+        sparse_v = numpy.array(sparse_v)
+        row = numpy.array(row)
+        col = numpy.array(col)
+        # calculate laplacian matrix
+        laplacian_matrix = csr_matrix((sparse_v, (row, col)), shape=(row_ct, col_ct))
+
+        # calculate normal matrix
+        normal_matrix = laplacian_matrix.transpose() * laplacian_matrix
+
+        # calculate reverse cuthill
+        reverse_cuthill = scipy.sparse.csgraph.reverse_cuthill_mckee(normal_matrix, symmetric_mode=True)
+        reverse_cuthill_mtx = numpy.ndarray(shape=(col_ct, col_ct))
+        inverse_ary = [0] * col_ct
+        normal_matrix_non_sparse = normal_matrix.toarray()
+
+        for i in range(col_ct):
+            row_index = reverse_cuthill[i]
+            inverse_ary[row_index] = i
+            for j in range(col_ct):
+                col_index = reverse_cuthill[j]
+                reverse_cuthill_mtx[i][j] = normal_matrix_non_sparse[row_index][col_index]
+
+        cholesky_matrix = scipy.linalg.cholesky(reverse_cuthill_mtx, lower=True, overwrite_a=True, check_finite=False)
+
+        # Assign values
+        self.VALENCES = valences
+        self.LAPLACIAN_VAL = list(sparse_v)
+        self.LAPLACIAN_ROW = list(row)
+        self.LAPLACIAN_COL = list(col)
+        self.LAPLACIAN_MTX = laplacian_matrix
+        self.INVERSE_CMO = inverse_ary
+        self.REVERSE_CUTHILL = reverse_cuthill
+        self.REVERSE_CUTHILL_MTX = reverse_cuthill_mtx
+        self.CHOLESKY_MTX = cholesky_matrix
 
 
 def prep_mesh(mesh):
@@ -627,7 +719,7 @@ def retreive_data(curr_data, filename):
         f.close()
 
 
-def reconstruction(training_type='differential', ground_truth=False):
+def reconstruction(reconstrustor, training_type='differential', ground_truth=False):
     # Create deformers
     deformers = prep_mesh(MESH)
     deformer_env_dict = {}
@@ -667,8 +759,9 @@ def reconstruction(training_type='differential', ground_truth=False):
         cur_anchor_data = pose_data['anchorPoints']
 
         # Calculate laplacian matrix
-        VALENCES, LAPLACIAN_VAL, LAPLACIAN_ROW, LAPLACIAN_COL, LAPLACIAN_MTX, INVERSE_CMO, \
-        REVERSE_CUTHILL, REVERSE_CUTHILL_MTX, CHOLESKY_MTX = cal_Lmatrice(pose_data)
+        if not reconstructor.isCalculated:
+            reconstructor.cal_Lmatrice(pose_data)
+            reconstructor.isCalculated = True
 
         col_ct = len(cur_differential_data)
         diff_coord = numpy.ndarray(shape=(col_ct + len(cur_anchor_data), 1))
@@ -681,7 +774,7 @@ def reconstruction(training_type='differential', ground_truth=False):
             for i, index in enumerate(cur_differential_data):
                 test_index.append(index)
                 test_coord.append(cur_differential_data[index][axis])
-                diff_coord[i] = VALENCES[i] * cur_differential_data[index][axis]
+                diff_coord[i] = reconstructor.VALENCES[i] * cur_differential_data[index][axis]
             for j, anchor in enumerate(cur_anchor_data):
                 test_coord.append(cur_anchor_data[anchor][axis])
                 # anchor weight currently set as 1.0
@@ -689,20 +782,20 @@ def reconstruction(training_type='differential', ground_truth=False):
 
             # calculate (L*) * d where D* is the transpose of the laplacian matrix
             # d is the differential coordinates scaled with valence
-            modified_diff_coord = LAPLACIAN_MTX.transpose() * diff_coord
+            modified_diff_coord = reconstructor.LAPLACIAN_MTX.transpose() * diff_coord
 
             # reorder coordinates based on reverse cuthill
             reordered_diff_coord = numpy.ndarray(shape=(col_ct, 1))
             for i in range(col_ct):
-                reordered_diff_coord[i] = modified_diff_coord[REVERSE_CUTHILL[i]]
+                reordered_diff_coord[i] = modified_diff_coord[reconstrustor.REVERSE_CUTHILL[i]]
 
             # back substitution to solve triangular matrices
-            solve_coord = scipy.linalg.solve_triangular(CHOLESKY_MTX, reordered_diff_coord, lower=True, overwrite_b=True, check_finite=False)
-            solve_real_coord = scipy.linalg.solve_triangular(CHOLESKY_MTX.T, solve_coord, lower=False, overwrite_b=True, check_finite=False)
+            solve_coord = scipy.linalg.solve_triangular(reconstructor.CHOLESKY_MTX, reordered_diff_coord, lower=True, overwrite_b=True, check_finite=False)
+            solve_real_coord = scipy.linalg.solve_triangular(reconstructor.CHOLESKY_MTX.T, solve_coord, lower=False, overwrite_b=True, check_finite=False)
 
             real_coord = []
             for i in range(col_ct):
-                real_coord.append(solve_real_coord[INVERSE_CMO[i]][0])
+                real_coord.append(solve_real_coord[reconstrustor.INVERSE_CMO[i]][0])
 
             real_coords.append(real_coord)
 
@@ -714,268 +807,170 @@ def reconstruction(training_type='differential', ground_truth=False):
     mc.setAttr(BLENDSHAPE + '.' + TEMP_TARGET, 1.0)
 
 
-def cal_Lmatrice(pose_data):
-    # Calculate the laplacian matrix, cholesky matrix and reverse_cuthill_mckee_order
-    connectionMap = {}
-    # Read in the connection map
-    f = open(topology_path, 'r')
-    reader = csv.reader(f)
-    content = list(reader)
-    for line in content:
-        if len(line) > 1:
-            connectionMap[int(line[0])] = [int(c) for c in line[1:]]
-        else:
-            connectionMap[int(line[0])] = []
-    f.close()
-
-    # handle essential data
-    anchors = pose_data['anchorPoints']
-    differentials = pose_data['differentialOffset']
-    valences = []
-    # # This snippet extracts connection map which has been stored statically
-    # selection_list = om.MSelectionList()
-    # selection_list.add(mesh)
-    # geom_obj = selection_list.getDependNode(0)
-    # vtx_iter = om.MItMeshVertex(geom_obj)
-    # while not vtx_iter.isDone():
-    #     index = vtx_iter.index()
-    #     connected_vtx = vtx_iter.getConnectedVertices()
-    #     connectionMap[index] = connected_vtx
-    #     vtx_iter.next()
-
-    num_vtx = len(differentials)
-    row = []
-    col = []
-    sparse_v = []
-
-    vid_dict = list(differentials.keys())
-
-    col_ct = num_vtx
-    row_ct = num_vtx + len(anchors)
-    for i, index in enumerate(differentials):
-        connected_vertices = connectionMap[index]
-        valence = float(len(connected_vertices))
-        valences.append(valence)
-
-        for j in range(num_vtx):
-            if i == j:
-                row.append(i)
-                col.append(j)
-                sparse_v.append(valence)
-            elif vid_dict[j] in connected_vertices:
-                row.append(i)
-                col.append(j)
-                sparse_v.append(-1.0)
-
-    for i, cur_anchor in enumerate(anchors):
-        for j, index in enumerate(differentials):
-            if index == cur_anchor:
-                row.append(i + num_vtx)
-                col.append(j)
-                # This place need to fill the anchor weight, currently set as 1.0
-                sparse_v.append(1.0)
-
-    sparse_v = numpy.array(sparse_v)
-    row = numpy.array(row)
-    col = numpy.array(col)
-    # calculate laplacian matrix
-    laplacian_matrix = csr_matrix((sparse_v, (row, col)), shape=(row_ct, col_ct))
-
-    # calculate normal matrix
-    normal_matrix = laplacian_matrix.transpose() * laplacian_matrix
-
-    # calculate reverse cuthill
-    reverse_cuthill = scipy.sparse.csgraph.reverse_cuthill_mckee(normal_matrix, symmetric_mode=True)
-    reverse_cuthill_mtx = numpy.ndarray(shape=(col_ct, col_ct))
-    inverse_ary = [0] * col_ct
-    normal_matrix_non_sparse = normal_matrix.toarray()
-
-    for i in range(col_ct):
-        row_index = reverse_cuthill[i]
-        inverse_ary[row_index] = i
-        for j in range(col_ct):
-            col_index = reverse_cuthill[j]
-            reverse_cuthill_mtx[i][j] = normal_matrix_non_sparse[row_index][col_index]
-
-    cholesky_matrix = scipy.linalg.cholesky(reverse_cuthill_mtx, lower=True, overwrite_a=True, check_finite=False)
-
-    # Assign values
-    va = valences
-    la_v = list(sparse_v)
-    la_r = list(row)
-    la_c = list(col)
-    la_m = laplacian_matrix
-    inv_c = inverse_ary
-    rc = reverse_cuthill
-    rc_m = reverse_cuthill_mtx
-    cho_m = cholesky_matrix
-
-    return va, la_v, la_r, la_c, la_m, inv_c, rc, rc_m, cho_m
-
-
 # Use this when need batch generating
 # filenames = []
 # for root, dirs, files in os.walk(input_path):
 #     filenames.append(files)
 
 # read in the csv file
-pose_rig(filename)
-
-# TODO: model is posed randomly
-# need to extract other information like mesh info
-curr_data = {}
-connectionMap = {}
-anchorIndex = []
-joint_dict = {}
-
-curr_data['anchorPoints'] = {}
-curr_data['differentialOffset'] = {}
-curr_data['worldPos'] = {}
-curr_data['worldOffset'] = {}
-curr_data['localOffset'] = {}
-curr_data['jointWorldMatrix'] = {}
-curr_data['jointWorldQuaternion'] = {}
-curr_data['jointLocalMatrix'] = {}
-curr_data['jointLocalQuaternion'] = {}
-
-# Read in the connection map
-f = open(topology_path, 'r')
-reader = csv.reader(f)
-content = list(reader)
-for line in content:
-    if len(line) > 1:
-        connectionMap[int(line[0])] = [int(c) for c in line[1:]]
-    else:
-        connectionMap[int(line[0])] = []
-f.close()
-
-# Read in the anchor points
-f = open(anchor_path, 'r')
-reader = csv.reader(f)
-content = list(reader)
-anchorIndex = [int(line[0]) for line in content[1:]]
-f.close()
-
-# Read in the joint relations
-f = open(joint_path, 'r')
-reader = csv.reader(f)
-content = list(reader)
-for line in content:
-    joint_dict[line[1]] = line[2]
-f.close()
-
-# Get the joint worldMatrix and worldQuaternion
-world_mats = {}
-for jnt in joint_dict:
-    world_mat = mc.getAttr(jnt + '.worldMatrix[0]')
-    world_mats[jnt] = world_mat
-
-    wm = om.MTransformationMatrix(om.MMatrix(world_mat))
-    quaternion = wm.rotation(asQuaternion=True)
-
-    temp = [
-        world_mat[0], world_mat[1], world_mat[2],
-        world_mat[4], world_mat[5], world_mat[6],
-        world_mat[8], world_mat[9], world_mat[10],
-        world_mat[12], world_mat[13], world_mat[14]
-    ]
-    curr_data['jointWorldMatrix'][jnt] = [round(i, PRECISION) for i in temp]
-
-    temp = [
-        quaternion[0], quaternion[1], quaternion[2], quaternion[3],
-        world_mat[12], world_mat[13], world_mat[14]
-    ]
-    curr_data['jointWorldQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
-
-# Get the joint local matrix and local quaternion
-for jnt in joint_dict:
-    parent = joint_dict[jnt]
-    local_mat = None
-    if parent:
-        parent_mat = om.MMatrix(world_mats[parent])
-        world_mat = om.MMatrix(world_mats[jnt])
-        local_mat = world_mat * parent_mat.inverse()
-    else:
-        local_mat = om.MMatrix(world_mats[jnt])
-
-    lm = om.MTransformationMatrix(local_mat)
-    quaternion = lm.rotation(asQuaternion=True)
-
-    temp = [
-        local_mat[0], local_mat[1], local_mat[2],
-        local_mat[4], local_mat[5], local_mat[6],
-        local_mat[8], local_mat[9], local_mat[10],
-        local_mat[12], local_mat[13], local_mat[14]
-    ]
-    curr_data['jointLocalMatrix'][jnt] = [round(i, PRECISION) for i in temp]
-
-    temp = [quaternion[0], quaternion[1], quaternion[2], quaternion[3],
-            local_mat[12], local_mat[13], local_mat[14]]
-    curr_data['jointLocalQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
-
-
-# Get the mesh vertex world information throuth following steps
-meshShape, positions, curr_data['worldPos'] = get_worldPos(MESH, PRECISION)
-# Create a duplicate
-duplicate = mc.duplicate(
-        MESH,
-        name=MESH + 'Dup',
-        upstreamNodes=False,
-        returnRootsOnly=True
-    )[0]
-# Create deformers
-deformers = prep_mesh(MESH)
-deformer_env_dict = {}
-# shutdown all deformers except for skin clusters
-for deformer in deformers:
-    dtype = mc.nodeType(deformer)
-    if dtype not in SKIN_TYPES:
-        deformer_env_dict[deformer] = mc.getAttr(deformer + '.envelope')
-        mc.setAttr(deformer + '.envelope', 0.0)
-# Get mesh linear postions
-linear_pos, curr_data['worldOffset'] = get_worldOffset(MESH, PRECISION, meshShape, positions)
-
-# Get local offset before linear skin blending
-offsets = get_localOffset(MESH, duplicate, TEMP_BS_NODE, TEMP_TARGET)
-vertex_count = len(curr_data['worldPos'])
-for i in range(vertex_count):
-    offset = offsets.get(i, [0.0, 0.0, 0.0])
-    curr_data['localOffset'][i] = [round(data, PRECISION) for data in offset]
-
-# Generate the differential offset data
-for i in range(len(connectionMap)):
-    neighbors = connectionMap[i]
-    valence = float(len(neighbors))
-    new_coord = offsets.get(i, [0.0, 0.0, 0.0])
-    neighbor_values = [0.0, 0.0, 0.0]
-    for neighbor in neighbors:
-        nb_coord = offsets.get(neighbor, [0.0, 0.0, 0.0])
-        neighbor_values[0] += nb_coord[0]
-        neighbor_values[1] += nb_coord[1]
-        neighbor_values[2] += nb_coord[2]
-
-    x = new_coord[0] - neighbor_values[0] / valence
-    y = new_coord[1] - neighbor_values[1] / valence
-    z = new_coord[2] - neighbor_values[2] / valence
-
-    offset = [x, y, z]
-    curr_data['differentialOffset'][i] = [round(data, PRECISION) for data in offset]
-
-# Get the anchor points data
-for anchor in anchorIndex:
-    offset = offsets.get(anchor, [0.0, 0.0, 0.0])
-    curr_data['anchorPoints'][anchor] = [round(data, PRECISION) for data in offset]
-
-# Restore the rig
-for deformer in deformers:
-    dtype = mc.nodeType(deformer)
-    if dtype not in SKIN_TYPES:
-        mc.setAttr(deformer + '.envelope', deformer_env_dict[deformer])
-mc.delete(duplicate)
-
-retreive_data(curr_data, filename)
+# pose_rig(filename)
+#
+# # TODO: model is posed randomly
+# # need to extract other information like mesh info
+# curr_data = {}
+# connectionMap = {}
+# anchorIndex = []
+# joint_dict = {}
+#
+# curr_data['anchorPoints'] = {}
+# curr_data['differentialOffset'] = {}
+# curr_data['worldPos'] = {}
+# curr_data['worldOffset'] = {}
+# curr_data['localOffset'] = {}
+# curr_data['jointWorldMatrix'] = {}
+# curr_data['jointWorldQuaternion'] = {}
+# curr_data['jointLocalMatrix'] = {}
+# curr_data['jointLocalQuaternion'] = {}
+#
+# # Read in the connection map
+# f = open(topology_path, 'r')
+# reader = csv.reader(f)
+# content = list(reader)
+# for line in content:
+#     if len(line) > 1:
+#         connectionMap[int(line[0])] = [int(c) for c in line[1:]]
+#     else:
+#         connectionMap[int(line[0])] = []
+# f.close()
+#
+# # Read in the anchor points
+# f = open(anchor_path, 'r')
+# reader = csv.reader(f)
+# content = list(reader)
+# anchorIndex = [int(line[0]) for line in content[1:]]
+# f.close()
+#
+# # Read in the joint relations
+# f = open(joint_path, 'r')
+# reader = csv.reader(f)
+# content = list(reader)
+# for line in content:
+#     joint_dict[line[1]] = line[2]
+# f.close()
+#
+# # Get the joint worldMatrix and worldQuaternion
+# world_mats = {}
+# for jnt in joint_dict:
+#     world_mat = mc.getAttr(jnt + '.worldMatrix[0]')
+#     world_mats[jnt] = world_mat
+#
+#     wm = om.MTransformationMatrix(om.MMatrix(world_mat))
+#     quaternion = wm.rotation(asQuaternion=True)
+#
+#     temp = [
+#         world_mat[0], world_mat[1], world_mat[2],
+#         world_mat[4], world_mat[5], world_mat[6],
+#         world_mat[8], world_mat[9], world_mat[10],
+#         world_mat[12], world_mat[13], world_mat[14]
+#     ]
+#     curr_data['jointWorldMatrix'][jnt] = [round(i, PRECISION) for i in temp]
+#
+#     temp = [
+#         quaternion[0], quaternion[1], quaternion[2], quaternion[3],
+#         world_mat[12], world_mat[13], world_mat[14]
+#     ]
+#     curr_data['jointWorldQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
+#
+# # Get the joint local matrix and local quaternion
+# for jnt in joint_dict:
+#     parent = joint_dict[jnt]
+#     local_mat = None
+#     if parent:
+#         parent_mat = om.MMatrix(world_mats[parent])
+#         world_mat = om.MMatrix(world_mats[jnt])
+#         local_mat = world_mat * parent_mat.inverse()
+#     else:
+#         local_mat = om.MMatrix(world_mats[jnt])
+#
+#     lm = om.MTransformationMatrix(local_mat)
+#     quaternion = lm.rotation(asQuaternion=True)
+#
+#     temp = [
+#         local_mat[0], local_mat[1], local_mat[2],
+#         local_mat[4], local_mat[5], local_mat[6],
+#         local_mat[8], local_mat[9], local_mat[10],
+#         local_mat[12], local_mat[13], local_mat[14]
+#     ]
+#     curr_data['jointLocalMatrix'][jnt] = [round(i, PRECISION) for i in temp]
+#
+#     temp = [quaternion[0], quaternion[1], quaternion[2], quaternion[3],
+#             local_mat[12], local_mat[13], local_mat[14]]
+#     curr_data['jointLocalQuaternion'][jnt] = [round(i, PRECISION) for i in temp]
+#
+#
+# # Get the mesh vertex world information throuth following steps
+# meshShape, positions, curr_data['worldPos'] = get_worldPos(MESH, PRECISION)
+# # Create a duplicate
+# duplicate = mc.duplicate(
+#         MESH,
+#         name=MESH + 'Dup',
+#         upstreamNodes=False,
+#         returnRootsOnly=True
+#     )[0]
+# # Create deformers
+# deformers = prep_mesh(MESH)
+# deformer_env_dict = {}
+# # shutdown all deformers except for skin clusters
+# for deformer in deformers:
+#     dtype = mc.nodeType(deformer)
+#     if dtype not in SKIN_TYPES:
+#         deformer_env_dict[deformer] = mc.getAttr(deformer + '.envelope')
+#         mc.setAttr(deformer + '.envelope', 0.0)
+# # Get mesh linear postions
+# linear_pos, curr_data['worldOffset'] = get_worldOffset(MESH, PRECISION, meshShape, positions)
+#
+# # Get local offset before linear skin blending
+# offsets = get_localOffset(MESH, duplicate, TEMP_BS_NODE, TEMP_TARGET)
+# vertex_count = len(curr_data['worldPos'])
+# for i in range(vertex_count):
+#     offset = offsets.get(i, [0.0, 0.0, 0.0])
+#     curr_data['localOffset'][i] = [round(data, PRECISION) for data in offset]
+#
+# # Generate the differential offset data
+# for i in range(len(connectionMap)):
+#     neighbors = connectionMap[i]
+#     valence = float(len(neighbors))
+#     new_coord = offsets.get(i, [0.0, 0.0, 0.0])
+#     neighbor_values = [0.0, 0.0, 0.0]
+#     for neighbor in neighbors:
+#         nb_coord = offsets.get(neighbor, [0.0, 0.0, 0.0])
+#         neighbor_values[0] += nb_coord[0]
+#         neighbor_values[1] += nb_coord[1]
+#         neighbor_values[2] += nb_coord[2]
+#
+#     x = new_coord[0] - neighbor_values[0] / valence
+#     y = new_coord[1] - neighbor_values[1] / valence
+#     z = new_coord[2] - neighbor_values[2] / valence
+#
+#     offset = [x, y, z]
+#     curr_data['differentialOffset'][i] = [round(data, PRECISION) for data in offset]
+#
+# # Get the anchor points data
+# for anchor in anchorIndex:
+#     offset = offsets.get(anchor, [0.0, 0.0, 0.0])
+#     curr_data['anchorPoints'][anchor] = [round(data, PRECISION) for data in offset]
+#
+# # Restore the rig
+# for deformer in deformers:
+#     dtype = mc.nodeType(deformer)
+#     if dtype not in SKIN_TYPES:
+#         mc.setAttr(deformer + '.envelope', deformer_env_dict[deformer])
+# mc.delete(duplicate)
+#
+# retreive_data(curr_data, filename)
 
 
 # TODO: only start reconstruction when training is complete
 # As the deformer will be changed from default
-# reconstruction(training_type="local_offset")
+reconstructor = reconstru()
+reconstruction(reconstructor, training_type="local_offset")
