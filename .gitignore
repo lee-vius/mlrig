@@ -5,3 +5,5 @@ ml/.DS_Store
 ml/maya_split/.DS_Store
 ml/maya_split/gen_data/temp_data/*
 ml/maya_split/mlmodel/model_param/model_states.pth
+ml/maya_split/mlmodel/model_param/*
+ml/maya_split/mlmodel/fig_output/*
