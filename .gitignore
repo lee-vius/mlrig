@@ -1,3 +1,3 @@
 ml/maya_split/gen_data/mover_rigged/*
 *.DS_Store
-./ml/maya_split/gen_data/temp_data/*
+ml/maya_split/gen_data/temp_data/*
