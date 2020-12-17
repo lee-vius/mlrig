@@ -17,6 +17,8 @@ from torch.utils.data import Dataset, Subset, DataLoader, random_split
 root_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/temp_data"
 input_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged"
 
+fig_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/fig_output"
+
 # Load in the dataset
 print("Loading datasets...")
 DATA_DEFORM = DeformData(root_dir=root_dir, inputD_dir=input_dir)
@@ -34,81 +36,136 @@ print("Done!")
 # TODO: Construct train process
 device = "cuda" if torch.cuda.is_available() else "cpu" # Configure device
 # device = "cpu"
-param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/model_states.pth"
+param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/"
 LOAD = False
-model = Network(540, 12942, 2, 2048).to(device)
+
+# create three traning models for x, y, z coordinates
+models = {}
+models['x'] = Network(540, 12942, 2, 2048).to(device)
+models['y'] = Network(540, 12942, 2, 2048).to(device)
+models['z'] = Network(540, 12942, 2, 2048).to(device)
+
 if LOAD:
     # read in the model last time trained
-    model.load_state_dict(torch.load(param_save_path))
+    models['x'].load_state_dict(torch.load(param_save_path + 'model_states_x.pth'))
+    models['y'].load_state_dict(torch.load(param_save_path + 'model_states_y.pth'))
+    models['z'].load_state_dict(torch.load(param_save_path + 'model_states_z.pth'))
+
 # TODO: choose your loss function
-# criterion = nn.CrossEntropyLoss()
 criterion = nn.L1Loss()
-# Debug
-# print(model)
+
 # TODO: adjust optimizer, learning rate, weight decay according to your need
-optimizer = optim.SGD(model.parameters(), lr=0.1, weight_decay=1e-6)
-# optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+optimizers = {}
+optimizers['x'] = optim.SGD(models['x'].parameters(), lr=0.1, weight_decay=1e-6)
+optimizers['y'] = optim.SGD(models['y'].parameters(), lr=0.1, weight_decay=1e-6)
+optimizers['z'] = optim.SGD(models['z'].parameters(), lr=0.1, weight_decay=1e-6)
 
 # TODO: choose an appropriate number of epoch
 num_epoch = 10
 
 
-def train(model, loader, num_epoch = 10): # Train the model
+def train(models, train_loader, val_loader, num_epoch = 10): # Train the model
     print("Start training...")
-    model.train() # Set the model to training mode
-    train_loss = []
-    # valid_loss = []
+    # Set the model to training mode
+    models['x'].train()
+    models['y'].train()
+    models['z'].train()
+    # Define loss
+    train_loss = {"x": [], "y": [], "z": []}
+    valid_loss = {"x": [], "y": [], "z": []}
     for i in range(num_epoch):
-        running_loss = []
-        for batch_data in tqdm(loader):
-            # print(i_batch)
-            # print(batch_data['mover_value'].size())
-            # print(batch_data['localOffset'].size())
+        running_loss = {'x': [], 'y': [], 'z': []}
+        for batch_data in tqdm(train_loader):
             batch = torch.tensor(batch_data['mover_value'].reshape(100, -1), dtype=torch.float32).to(device)
             label = torch.tensor(batch_data['differentialOffset'], dtype=torch.float32).to(device)
-            optimizer.zero_grad()
-            pred = model(batch)
-            loss = criterion(pred, label[:, :, 0])
-            running_loss.append(loss.item())
-            loss.backward()
-            optimizer.step()
+            # initialize optimizers
+            optimizers['x'].zero_grad()
+            optimizers['y'].zero_grad()
+            optimizers['z'].zero_grad()
+            # predict x results
+            pred_x = models['x'](batch)
+            loss_x = criterion(pred_x, label[:, :, 0])
+            running_loss['x'].append(loss_x.item())
+            loss_x.backward()
+            optimizers['x'].step()
+            # predict y results
+            pred_y = models['y'](batch)
+            loss_y = criterion(pred_y, label[:, :, 1])
+            running_loss['y'].append(loss_y.item())
+            loss_y.backward()
+            optimizers['y'].step()
+            # predict z results
+            pred_z = models['z'](batch)
+            loss_z = criterion(pred_z, label[:, :, 2])
+            running_loss['z'].append(loss_z.item())
+            loss_z.backward()
+            optimizers['z'].step()
 
-        print("Epoch {} loss:{}".format(i+1,np.mean(running_loss))) # Print the average loss for this epoch
-        train_loss.append(np.mean(running_loss))
-#         _, val_loss = evaluate(model, valloader)
-#         valid_loss.append(val_loss)
+        # Print the average loss for this epoch
+        print("Epoch {} loss X:{}, Y:{}, Z:{}".format(
+            i+1 ,np.mean(running_loss['x']), np.mean(running_loss['y']), np.mean(running_loss['z'])
+            ))
+        train_loss['x'].append(np.mean(running_loss['x']))
+        train_loss['y'].append(np.mean(running_loss['y']))
+        train_loss['z'].append(np.mean(running_loss['z']))
+        # Get validation loss
+        val_loss_x, val_loss_y, val_loss_z = evaluate(models, val_loader)
+        valid_loss['x'].append(val_loss_x)
+        valid_loss['y'].append(val_loss_y)
+        valid_loss['z'].append(val_loss_z)
+
     print("Done!")
-    # TODO: If needed, you can use following lines to print loss history
-    # x_axis = list(range(len(train_loss)))
-    # plt.plot(x_axis, train_loss)
-    # plt.plot(x_axis, valid_loss)
-    # plt.legend(['train-loss', 'valid-loss'])
-    # plt.xlabel("epoch number")
-    # plt.ylabel("Loss")
-    # plt.title('Loss for train and validation')
-    # plt.savefig('Loss_history.png')
+    # TODO: comment following if not want to output loss history
+    plot_loss_history(train_loss['x'], valid_loss['x'], type='X')
+    plot_loss_history(train_loss['y'], valid_loss['y'], type='Y')
+    plot_loss_history(train_loss['z'], valid_loss['z'], type='Z')
 
 
-def evaluate(model, loader): # Evaluate accuracy on validation / test set
-    model.eval() # Set the model to evaluation mode
-    correct = 0
+def evaluate(models, loader): # Evaluate accuracy on validation / test set
+    # Set the model to evaluation mode
+    models['x'].eval() 
+    models['y'].eval()
+    models['z'].eval()
     with torch.no_grad(): # Do not calculate grident to speed up computation
-        running_loss = []
-        for batch, label in tqdm(loader):
-            batch = batch.to(device)
-            label = label.to(device)
-            pred = model(batch)
-            loss = criterion(pred, label) # Calculate the loss
-            running_loss.append(loss)
-            correct += (torch.argmax(pred, dim=1) == label).sum().item()
-    acc = correct/len(loader.dataset)
-    print("Evaluation accuracy: {}".format(acc))
-    return acc, np.mean(running_loss)
+        running_loss = {'x': [], 'y': [], 'z': []}
+        for batch_data in tqdm(loader):
+            batch = torch.tensor(batch_data['mover_value'].reshape(100, -1), dtype=torch.float32).to(device)
+            label = torch.tensor(batch_data['differentialOffset'], dtype=torch.float32).to(device)
+            # predict x results
+            pred_x = models['x'](batch)
+            loss_x = criterion(pred_x, label[:, :, 0])
+            running_loss['x'].append(loss_x.item())
+            # predict y results
+            pred_y = models['y'](batch)
+            loss_y = criterion(pred_y, label[:, :, 1])
+            running_loss['y'].append(loss_y.item())
+            # predict z results
+            pred_z = models['z'](batch)
+            loss_z = criterion(pred_z, label[:, :, 2])
+            running_loss['z'].append(loss_z.item())
 
+    print("Evaluation loss X: {}, Y: {}, Z: {}".format(
+        np.mean(running_loss['x']), np.mean(running_loss['y']), np.mean(running_loss['z'])
+        ))
+    return np.mean(running_loss['x']), np.mean(running_loss['y']), np.mean(running_loss['z'])
+
+
+def plot_loss_history(train_loss, valid_loss, type='X'):
+    x_axis = list(range(len(train_loss)))
+    plt.plot(x_axis, train_loss)
+    plt.plot(x_axis, valid_loss)
+    plt.legend(['train-loss', 'valid-loss'])
+    plt.xlabel("epoch number")
+    plt.ylabel("Loss")
+    plt.title("Loss for train and validation of coordinate {}".format(type))
+    plt.savefig(fig_dir + '/Loss_history_{}.png'.format(type))
+    plt.close()
 
 # save the parameters after training
-train(model, train_loader, num_epoch)
-torch.save(obj=model.state_dict(), f=param_save_path)
+train(models, train_loader, val_loader, num_epoch=num_epoch)
+torch.save(obj=models['x'].state_dict(), f=param_save_path + 'model_states_x.pth')
+torch.save(obj=models['y'].state_dict(), f=param_save_path + 'model_states_y.pth')
+torch.save(obj=models['z'].state_dict(), f=param_save_path + 'model_states_z.pth')
 
 # evaluate the model
 # print("Evaluate on validation set...")
