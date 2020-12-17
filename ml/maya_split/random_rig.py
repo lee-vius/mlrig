@@ -58,5 +58,5 @@ def gen_random_rig(distri_scale=2.0, input_file=rest_rig_path, file_path=out_pat
 
 if __name__ == "__main__":
     print("running")
-    for i in range(100):
+    for i in range(10000):
         gen_random_rig(file_code=i)
