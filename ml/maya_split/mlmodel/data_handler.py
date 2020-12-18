@@ -14,7 +14,7 @@ import pandas as pd
 from torch.utils.data import Dataset, Subset, DataLoader, random_split
 
 
-class DeformData(Dataset): # inherant from Dataset
+class DeformData(Dataset):  # inherant from Dataset
     def __init__(self, root_dir, inputD_dir, transform=None):
         self.root_dir = root_dir # 数据集的根目录
         self.input_dir = inputD_dir

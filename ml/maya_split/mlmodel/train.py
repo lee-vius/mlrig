@@ -1,3 +1,4 @@
+import sys
 from mlmodel import Network
 from data_handler import DeformData
 import numpy as np
@@ -16,8 +17,16 @@ from torch.utils.data import Dataset, Subset, DataLoader, random_split
 # TODO: Define the folder path of data
 root_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/temp_data"
 input_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged"
-
 fig_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/fig_output"
+param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/"
+
+if sys.platform == 'win32':
+    # Redefine folder path if the system is windows
+    root_dir = "D:/ACG/project/ml/maya_split/gen_data/temp_data"
+    input_dir = "D:/ACG/project/ml/maya_split/gen_data/mover_rigged"
+    fig_dir = "D:/ACG/project/ml/maya_split/mlmodel/fig_output"
+    param_save_path = "D:/ACG/project/ml/maya_split/mlmodel/model_param/"
+
 
 # Load in the dataset
 print("Loading datasets...")
@@ -35,15 +44,14 @@ print("Done!")
 
 # TODO: Construct train process
 device = "cuda" if torch.cuda.is_available() else "cpu" # Configure device
-# device = "cpu"
-param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/"
+print("Train Device is {}".format(device))
+
 LOAD = False
 
 # create three traning models for x, y, z coordinates
-models = {}
-models['x'] = Network(540, 12942, 2, 2048).to(device)
-models['y'] = Network(540, 12942, 2, 2048).to(device)
-models['z'] = Network(540, 12942, 2, 2048).to(device)
+models = {'x': Network(540, 12942, 2, 2048).to(device),
+          'y': Network(540, 12942, 2, 2048).to(device),
+          'z': Network(540, 12942, 2, 2048).to(device)}
 
 if LOAD:
     # read in the model last time trained
@@ -55,10 +63,9 @@ if LOAD:
 criterion = nn.L1Loss()
 
 # TODO: adjust optimizer, learning rate, weight decay according to your need
-optimizers = {}
-optimizers['x'] = optim.SGD(models['x'].parameters(), lr=0.1, weight_decay=1e-6)
-optimizers['y'] = optim.SGD(models['y'].parameters(), lr=0.1, weight_decay=1e-6)
-optimizers['z'] = optim.SGD(models['z'].parameters(), lr=0.1, weight_decay=1e-6)
+optimizers = {'x': optim.SGD(models['x'].parameters(), lr=0.1, weight_decay=1e-6),
+              'y': optim.SGD(models['y'].parameters(), lr=0.1, weight_decay=1e-6),
+              'z': optim.SGD(models['z'].parameters(), lr=0.1, weight_decay=1e-6)}
 
 # TODO: choose an appropriate number of epoch
 num_epoch = 10
