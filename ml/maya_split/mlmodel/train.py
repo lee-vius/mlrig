@@ -49,9 +49,9 @@ print("Train Device is {}".format(device))
 LOAD = False
 
 # create three traning models for x, y, z coordinates
-models = {'x': Network(540, 12942, 2, 2048).to(device),
-          'y': Network(540, 12942, 2, 2048).to(device),
-          'z': Network(540, 12942, 2, 2048).to(device)}
+models = {'x': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
+          'y': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
+          'z': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device)}
 
 if LOAD:
     # read in the model last time trained
