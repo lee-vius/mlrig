@@ -31,8 +31,8 @@ if sys.platform == 'win32':
 # Load in the dataset
 print("Loading datasets...")
 DATA_DEFORM = DeformData(root_dir=root_dir, inputD_dir=input_dir)
-DATA_TRAIN = Subset(DATA_DEFORM, range(400))
-DATA_VAL = Subset(DATA_DEFORM, range(400, 500))
+DATA_TRAIN = Subset(DATA_DEFORM, range(2000))
+DATA_VAL = Subset(DATA_DEFORM, range(2000, 2500))
 # TODO: adjust the batch size
 train_loader = DataLoader(DATA_TRAIN, batch_size=100, shuffle=True)
 val_loader = DataLoader(DATA_VAL, batch_size=100, shuffle=True)
@@ -43,12 +43,13 @@ val_loader = DataLoader(DATA_VAL, batch_size=100, shuffle=True)
 print("Done!")
 
 # TODO: Construct train process
-device = "cuda" if torch.cuda.is_available() else "cpu" # Configure device
+# device = "cuda" if torch.cuda.is_available() else "cpu"  # Configure device
+device = "cpu"  # currently gpu not available
 print("Train Device is {}".format(device))
 
 LOAD = False
 
-# create three traning models for x, y, z coordinates
+# create three training models for x, y, z coordinates
 models = {'x': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
           'y': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
           'z': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device)}
@@ -68,7 +69,7 @@ optimizers = {'x': optim.SGD(models['x'].parameters(), lr=0.1, weight_decay=1e-6
               'z': optim.SGD(models['z'].parameters(), lr=0.1, weight_decay=1e-6)}
 
 # TODO: choose an appropriate number of epoch
-num_epoch = 10
+num_epoch = 1000
 
 
 def train(models, train_loader, val_loader, num_epoch = 10): # Train the model
