@@ -1,4 +1,5 @@
 import sys
+import os
 from mlmodel import Network
 from data_handler import DeformData
 import numpy as np
@@ -49,9 +50,9 @@ print("Train Device is {}".format(device))
 LOAD = False
 
 # create three traning models for x, y, z coordinates
-models = {'x': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
-          'y': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
-          'z': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device)}
+models = {'x': Network(540, 12942, 5, 2048, dropout=0.0, bn=False).to(device),
+          'y': Network(540, 12942, 5, 2048, dropout=0.0, bn=False).to(device),
+          'z': Network(540, 12942, 5, 2048, dropout=0.0, bn=False).to(device)}
 
 if LOAD:
     # read in the model last time trained
@@ -66,6 +67,23 @@ criterion = nn.L1Loss()
 optimizers = {'x': optim.SGD(models['x'].parameters(), lr=0.1, weight_decay=1e-6),
               'y': optim.SGD(models['y'].parameters(), lr=0.1, weight_decay=1e-6),
               'z': optim.SGD(models['z'].parameters(), lr=0.1, weight_decay=1e-6)}
+
+
+# TODO: create anchor points models
+ANCHOR_NUM = 107
+anchor_criterion = nn.MSELoss()
+
+anchor_models = []
+for i in range(ANCHOR_NUM):
+    anchor_models.append(Network(540, 3, 3, 64, dropout=0.0))
+
+if LOAD:
+    for i, m in enumerate(anchor_models):
+        m.load_state_dict(torch.load(param_save_path + '/anchor_models/model{}.pth'.format(i)))
+
+anchor_optimizers = []
+for i in range(ANCHOR_NUM):
+    anchor_optimizers.append(optim.SGD(anchor_models[i].parameters(), lr=0.1, weight_decay=1e-6))
 
 # TODO: choose an appropriate number of epoch
 num_epoch = 10
@@ -157,6 +175,69 @@ def evaluate(models, loader): # Evaluate accuracy on validation / test set
     return np.mean(running_loss['x']), np.mean(running_loss['y']), np.mean(running_loss['z'])
 
 
+def train_anchor(anchor_num, train_loader, val_loader, num_epoch = 10): # Train the model
+    print("Start training...")
+    # Set train mode
+    for model in anchor_models:
+        model.train()
+    # Define loss
+    train_loss = [[] for i in range(anchor_num)]
+    valid_loss = [[] for i in range(anchor_num)]
+    for epo in range(num_epoch):
+        running_loss = []
+        for i in range(anchor_num):
+            running_loss.append([])
+        for batch_data in tqdm(train_loader):
+            batch = torch.tensor(batch_data['mover_value'].reshape(100, -1), dtype=torch.float32).to(device)
+            label = torch.tensor(batch_data['anchor_offsets'], dtype=torch.float32).to(device)
+            # initialize optimizers
+            for opt in anchor_optimizers:
+                opt.zero_grad()
+            # predict x results
+            pred = [ml(batch) for ml in anchor_models]
+            loss = [anchor_criterion(pred[i], label[:,i,:]) for i in range(len(pred))]
+            # backward
+            for i in range(anchor_num):
+                running_loss[i].append(loss[i].item())
+                loss[i].backward()
+                anchor_optimizers[i].step()
+
+        # Print the average loss for this epoch
+        print("Epoch {}".format(epo))
+        print("Anchors mean losses: {}".format(np.mean([np.mean(running_loss[i]) for i in range(anchor_num)])))
+        for i in range(anchor_num):
+            train_loss[i].append(np.mean(running_loss[i]))
+        # Get validation loss
+        val_loss = evaluate_anchor(anchor_num, val_loader)
+        for i in range(anchor_num):
+            valid_loss[i].append(val_loss[i])
+    print("Done!")
+    # TODO: comment following if not want to output loss history
+    plot_loss_history(train_loss[0], valid_loss[0], type='Anchor0')
+
+
+def evaluate_anchor(anchor_num, loader): # Evaluate accuracy on validation / test set
+    # Set the model to evaluation mode
+    for i in range(anchor_num):
+        anchor_models[i].eval()
+    with torch.no_grad(): # Do not calculate grident to speed up computation
+        running_loss = []
+        for i in range(anchor_num):
+            running_loss.append([])
+        for batch_data in tqdm(loader):
+            batch = torch.tensor(batch_data['mover_value'].reshape(100, -1), dtype=torch.float32).to(device)
+            label = torch.tensor(batch_data['anchor_offsets'], dtype=torch.float32).to(device)
+            # predict results
+            pred = [ml(batch) for ml in anchor_models]
+            loss = [anchor_criterion(pred[i], label[:,i,:]) for i in range(len(pred))]
+            for i in range(anchor_num):
+                running_loss[i].append(loss[i].item())
+    eva_loss = [np.mean(running_loss[i]) for i in range(anchor_num)]
+    print("Evaluation loss: {}".format(np.mean(eva_loss)))
+
+    return eva_loss
+    
+
 def plot_loss_history(train_loss, valid_loss, type='X'):
     x_axis = list(range(len(train_loss)))
     plt.plot(x_axis, train_loss)
@@ -169,10 +250,19 @@ def plot_loss_history(train_loss, valid_loss, type='X'):
     plt.close()
 
 # save the parameters after training
-train(models, train_loader, val_loader, num_epoch=num_epoch)
-torch.save(obj=models['x'].state_dict(), f=param_save_path + 'model_states_x.pth')
-torch.save(obj=models['y'].state_dict(), f=param_save_path + 'model_states_y.pth')
-torch.save(obj=models['z'].state_dict(), f=param_save_path + 'model_states_z.pth')
+# train(models, train_loader, val_loader, num_epoch=num_epoch)
+# torch.save(obj=models['x'].state_dict(), f=param_save_path + 'model_states_x.pth')
+# torch.save(obj=models['y'].state_dict(), f=param_save_path + 'model_states_y.pth')
+# torch.save(obj=models['z'].state_dict(), f=param_save_path + 'model_states_z.pth')
+
+# train the anchor points
+train_anchor(ANCHOR_NUM, train_loader, val_loader, num_epoch=num_epoch)
+# save the anchor models
+for i in range(ANCHOR_NUM):
+    if not os.path.exists(param_save_path + '/anchor_models/model{}.pth'.format(i)):
+        fd = open(param_save_path + '/anchor_models/model{}.pth'.format(i), 'w', encoding="utf-8")
+        fd.close()
+    torch.save(obj=anchor_models[i].state_dict(), f=param_save_path + '/anchor_models/model{}.pth'.format(i))
 
 # evaluate the model
 # print("Evaluate on validation set...")

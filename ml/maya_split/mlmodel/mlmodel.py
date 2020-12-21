@@ -1,9 +1,10 @@
 import numpy as np
+import torch
 from torch import nn
 
 
 class Network(nn.Module):
-    def __init__(self, input_size, output_size, hidden_num, hidden_size, dropout=0.0, bn=False):
+    def __init__(self, input_size, output_size, hidden_num, hidden_size, dropout=0.0, bn=False, pca_num=0):
         super().__init__()
         # The network can be used to train both differential and anchor points
         # Contain 2 Dense layers (input/output layer)
@@ -15,6 +16,7 @@ class Network(nn.Module):
         self.output_size = output_size # The size of output feature
         self.hidden_num = hidden_num # The number of hidden layers
         self.hidden_size = hidden_size # The out put size of hidden layers
+        self.pca_num = pca_num # The number of principal components that will be kept
 
         # Construct the input layer
         self.input_fc = nn.Sequential(
@@ -50,4 +52,21 @@ class Network(nn.Module):
                 x = self.dropout_layers[i](x)
 
         x = self.output_fc(x)
+        # Apply PCA
+        if self.pca_num != 0:
+            components = torch.tensor(self.PCA_svd(x, self.pca_num), dtype=torch.float32)
+            x = torch.mm(components.t(), x - components.mean())
+            x = torch.mm(components, x) + components.mean()
         return x
+
+    @staticmethod
+    def PCA_svd(X, k, center=True):
+        n = X.size()[0]
+        ones = torch.ones(n).view([n,1])
+        h = ((1/n) * torch.mm(ones, ones.t())) if center  else torch.zeros(n*n).view([n,n])
+        H = torch.eye(n) - h
+        X_center =  torch.mm(H.double(), X.double())
+        u, s, v = torch.svd(X_center)
+        components  = v[:k].t()
+        #explained_variance = torch.mul(s[:k], s[:k])/(n-1)
+        return components
