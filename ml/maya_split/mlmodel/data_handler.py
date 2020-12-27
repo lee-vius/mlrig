@@ -116,18 +116,54 @@ class DeformData(Dataset):  # inherant from Dataset
         pose_data['mover_value'] = np.array(df[attrs[1:]], dtype=np.float)
         return pose_data
 
+
+class TestData(Dataset):  # inherant from Dataset
+    def __init__(self, root_dir, input_dir, transform=None):
+        self.root_dir = root_dir # 数据集的根目录
+        self.input_dir = input_dir
+        self.transform = transform # 自定义的transform
+        mover_files = os.listdir(self.root_dir)
+        self.data_files = [i for i in mover_files if i[:6] == "rigged"]
+
+        self.data_set = {}
+
+    
+    def __len__(self): # return the size of the dataset
+        return len(self.data_files)
+
+
+    def __getitem__(self, index): # return dataset[index] according to the index
+        # check memory if have stored the data
+        if index in self.data_set:
+            return self.data_set[index]
+        file_index = self.data_files[index]
+        file_path = os.path.join(self.root_dir, file_index)
+        input_path = self.input_dir
+        # read in data
+        pose_data = self.read_in_data(file_path, input_path)
+
+        if self.transform:
+            pose_data = self.transform(pose_data)
+
+        self.data_set[index] = pose_data
+        return pose_data
+
     @staticmethod
-    def read_in_rig(filepath):
-        # read in the result as a dict
-        f = open(filepath, 'r')
-        reader = list(csv.reader(f))
-        pose_rig = {}
-        # get the attribute to set
-        attribute = reader[0][1:]
-        for line in reader[1:]:
-            mover = line[0]
-            # get each attribute
-            for i, value in enumerate(line[1:]):
-                pose_rig[mover + '.' + attribute[i]] = float(value)
-        f.close()
-        return pose_rig 
+    def read_in_data(filepath, input_path):
+        pose_data = {}
+        # read in mover data
+        df = pd.read_csv(filepath, header=0)
+        attrs = list(df.keys())
+        pose_data['mover_name'] = list(df[attrs[0]])
+        pose_data['mover_value'] = np.array(df[attrs[1:]], dtype=np.float)
+
+        # read in anchor point index
+        data_type = {
+            'index': np.int32,
+            'x': np.float,
+            'y': np.float,
+            'z': np.float
+        }
+        df = pd.read_csv(input_path, header=None, names=list(data_type.keys()), dtype=data_type)
+        pose_data['anchor_index'] = np.array(df['index'], dtype=np.int32)
+        return pose_data

@@ -1,7 +1,7 @@
 import sys
 import os
 from mlmodel import Network
-from data_handler import DeformData
+from data_handler import DeformData, TestData
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm # Displays a progress bar
@@ -264,9 +264,3 @@ for i in range(ANCHOR_NUM):
         fd = open(param_save_path + '/anchor_models/model{}.pth'.format(i), 'w', encoding="utf-8")
         fd.close()
     torch.save(obj=anchor_models[i].state_dict(), f=param_save_path + '/anchor_models/model{}.pth'.format(i))
-
-# evaluate the model
-# print("Evaluate on validation set...")
-# evaluate(model, valloader)
-# print("Evaluate on test set")
-# evaluate(model, testloader)
