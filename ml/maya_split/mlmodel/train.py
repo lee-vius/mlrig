@@ -32,8 +32,8 @@ if sys.platform == 'win32':
 # Load in the dataset
 print("Loading datasets...")
 DATA_DEFORM = DeformData(root_dir=root_dir, inputD_dir=input_dir)
-DATA_TRAIN = Subset(DATA_DEFORM, range(2000))
-DATA_VAL = Subset(DATA_DEFORM, range(2000, 2500))
+DATA_TRAIN = Subset(DATA_DEFORM, range(400))
+DATA_VAL = Subset(DATA_DEFORM, range(400, 500))
 # TODO: adjust the batch size
 train_loader = DataLoader(DATA_TRAIN, batch_size=100, shuffle=True)
 val_loader = DataLoader(DATA_VAL, batch_size=100, shuffle=True)
@@ -86,8 +86,28 @@ anchor_optimizers = []
 for i in range(ANCHOR_NUM):
     anchor_optimizers.append(optim.SGD(anchor_models[i].parameters(), lr=0.1, weight_decay=1e-6))
 
+# create three training models for localoffset x, y, z coordinates
+local_models = {'x': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
+                'y': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
+                'z': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device)}
+
+if LOAD:
+    # read in the model last time trained
+    local_models['x'].load_state_dict(torch.load(param_save_path + 'local_states_x.pth'))
+    local_models['y'].load_state_dict(torch.load(param_save_path + 'local_states_y.pth'))
+    local_models['z'].load_state_dict(torch.load(param_save_path + 'local_states_z.pth'))
+
+# TODO: choose your loss function
+local_criterion = nn.MSELoss()
+
+# TODO: adjust optimizer, learning rate, weight decay according to your need
+local_optimizers = {'x': optim.SGD(local_models['x'].parameters(), lr=0.1, weight_decay=1e-6),
+                    'y': optim.SGD(local_models['y'].parameters(), lr=0.1, weight_decay=1e-6),
+                    'z': optim.SGD(local_models['z'].parameters(), lr=0.1, weight_decay=1e-6)}
+
+
 # TODO: choose an appropriate number of epoch
-num_epoch = 1000
+num_epoch = 50
 
 
 def train(models, train_loader, val_loader, num_epoch = 10): # Train the model
@@ -176,7 +196,93 @@ def evaluate(models, loader): # Evaluate accuracy on validation / test set
     return np.mean(running_loss['x']), np.mean(running_loss['y']), np.mean(running_loss['z'])
 
 
-def train_anchor(anchor_num, train_loader, val_loader, num_epoch = 10): # Train the model
+def train_local(models, train_loader, val_loader, num_epoch = 10): # Train the model
+    print("Start training localoffset...")
+    # Set the model to training mode
+    models['x'].train()
+    models['y'].train()
+    models['z'].train()
+    # Define loss
+    train_loss = {"x": [], "y": [], "z": []}
+    valid_loss = {"x": [], "y": [], "z": []}
+    for i in range(num_epoch):
+        running_loss = {'x': [], 'y': [], 'z': []}
+        for batch_data in tqdm(train_loader):
+            batch = torch.tensor(batch_data['mover_value'].reshape(100, -1), dtype=torch.float32).to(device)
+            label = torch.tensor(batch_data['localOffset'], dtype=torch.float32).to(device)
+            # initialize optimizers
+            local_optimizers['x'].zero_grad()
+            local_optimizers['y'].zero_grad()
+            local_optimizers['z'].zero_grad()
+            # predict x results
+            pred_x = models['x'](batch)
+            loss_x = local_criterion(pred_x, label[:, :, 0])
+            running_loss['x'].append(loss_x.item())
+            loss_x.backward()
+            local_optimizers['x'].step()
+            # predict y results
+            pred_y = models['y'](batch)
+            loss_y = local_criterion(pred_y, label[:, :, 1])
+            running_loss['y'].append(loss_y.item())
+            loss_y.backward()
+            local_optimizers['y'].step()
+            # predict z results
+            pred_z = models['z'](batch)
+            loss_z = local_criterion(pred_z, label[:, :, 2])
+            running_loss['z'].append(loss_z.item())
+            loss_z.backward()
+            local_optimizers['z'].step()
+
+        # Print the average loss for this epoch
+        print("Epoch {} loss X:{}, Y:{}, Z:{}".format(
+            i+1 ,np.mean(running_loss['x']), np.mean(running_loss['y']), np.mean(running_loss['z'])
+            ))
+        train_loss['x'].append(np.mean(running_loss['x']))
+        train_loss['y'].append(np.mean(running_loss['y']))
+        train_loss['z'].append(np.mean(running_loss['z']))
+        # Get validation loss
+        val_loss_x, val_loss_y, val_loss_z = evaluate_local(models, val_loader)
+        valid_loss['x'].append(val_loss_x)
+        valid_loss['y'].append(val_loss_y)
+        valid_loss['z'].append(val_loss_z)
+
+    print("Done!")
+    # TODO: comment following if not want to output loss history
+    plot_loss_history(train_loss['x'], valid_loss['x'], type='local_X')
+    plot_loss_history(train_loss['y'], valid_loss['y'], type='local_Y')
+    plot_loss_history(train_loss['z'], valid_loss['z'], type='local_Z')
+
+
+def evaluate_local(models, loader): # Evaluate accuracy on validation / test set
+    # Set the model to evaluation mode
+    models['x'].eval() 
+    models['y'].eval()
+    models['z'].eval()
+    with torch.no_grad(): # Do not calculate grident to speed up computation
+        running_loss = {'x': [], 'y': [], 'z': []}
+        for batch_data in tqdm(loader):
+            batch = torch.tensor(batch_data['mover_value'].reshape(100, -1), dtype=torch.float32).to(device)
+            label = torch.tensor(batch_data['localOffset'], dtype=torch.float32).to(device)
+            # predict x results
+            pred_x = models['x'](batch)
+            loss_x = local_criterion(pred_x, label[:, :, 0])
+            running_loss['x'].append(loss_x.item())
+            # predict y results
+            pred_y = models['y'](batch)
+            loss_y = local_criterion(pred_y, label[:, :, 1])
+            running_loss['y'].append(loss_y.item())
+            # predict z results
+            pred_z = models['z'](batch)
+            loss_z = local_criterion(pred_z, label[:, :, 2])
+            running_loss['z'].append(loss_z.item())
+
+    print("Evaluation loss X: {}, Y: {}, Z: {}".format(
+        np.mean(running_loss['x']), np.mean(running_loss['y']), np.mean(running_loss['z'])
+        ))
+    return np.mean(running_loss['x']), np.mean(running_loss['y']), np.mean(running_loss['z'])
+
+
+def train_anchor(anchor_models, anchor_num, train_loader, val_loader, num_epoch = 10): # Train the model
     print("Start training...")
     # Set train mode
     for model in anchor_models:
@@ -256,11 +362,17 @@ def plot_loss_history(train_loss, valid_loss, type='X'):
 # torch.save(obj=models['y'].state_dict(), f=param_save_path + 'model_states_y.pth')
 # torch.save(obj=models['z'].state_dict(), f=param_save_path + 'model_states_z.pth')
 
+# save the localoffset parameters after training
+train_local(local_models, train_loader, val_loader, num_epoch=num_epoch)
+torch.save(obj=local_models['x'].state_dict(), f=param_save_path + 'local_states_x.pth')
+torch.save(obj=local_models['y'].state_dict(), f=param_save_path + 'local_states_y.pth')
+torch.save(obj=local_models['z'].state_dict(), f=param_save_path + 'local_states_z.pth')
+
 # train the anchor points
-train_anchor(ANCHOR_NUM, train_loader, val_loader, num_epoch=num_epoch)
-# save the anchor models
-for i in range(ANCHOR_NUM):
-    if not os.path.exists(param_save_path + '/anchor_models/model{}.pth'.format(i)):
-        fd = open(param_save_path + '/anchor_models/model{}.pth'.format(i), 'w', encoding="utf-8")
-        fd.close()
-    torch.save(obj=anchor_models[i].state_dict(), f=param_save_path + '/anchor_models/model{}.pth'.format(i))
+# train_anchor(anchor_models, ANCHOR_NUM, train_loader, val_loader, num_epoch=num_epoch)
+# # save the anchor models
+# for i in range(ANCHOR_NUM):
+#     if not os.path.exists(param_save_path + '/anchor_models/model{}.pth'.format(i)):
+#         fd = open(param_save_path + '/anchor_models/model{}.pth'.format(i), 'w', encoding="utf-8")
+#         fd.close()
+#     torch.save(obj=anchor_models[i].state_dict(), f=param_save_path + '/anchor_models/model{}.pth'.format(i))
