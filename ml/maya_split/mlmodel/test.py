@@ -4,6 +4,7 @@ from mlmodel import Network_diff, Network_anchor
 from data_handler import DeformData, TestData
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 import scipy
 import scipy.sparse.linalg as linalg
 from scipy.sparse import csr_matrix
@@ -102,8 +103,9 @@ test_dir_root = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya
 root_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/temp_data"
 input_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged"
 anchor_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/anchorPoints.csv"
-param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/"
+param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/trained/"
 topology_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/topology_Mery_geo_cn_body.csv"
+recon_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/recon/"
 
 # create the reconstructor
 RECONSTRUCTOR = reconstru(topology_path)
@@ -116,6 +118,7 @@ if sys.platform == 'win32':
     anchor_dir = "D:/ACG/project/ml/maya_split/gen_data/anchorPoints.csv"
     param_save_path = "D:/ACG/project/ml/maya_split/mlmodel/model_param/trained/"
     topology_path = "D:/ACG/project/ml/maya_split/gen_data/topology_Mery_geo_cn_body.csv"
+    recon_path = "D:/ACG/project/ml/maya_split/gen_data/recon"
 
 
 # Load in the test dataset
@@ -252,6 +255,17 @@ def get_label(valid_index, loader):
     return diff_label[0], local_label[0], anchor_ind[0], anchor_offset[0]
 
 
+def write_files(diffOffset, localoffset, recon_localoffset, foldername):
+    if not os.path.exists(recon_path + foldername):
+        os.mkdir(recon_path + foldername)
+    data1 = DataFrame(diffOffset)
+    data1.to_csv(recon_path + foldername + '/differential.csv', header=None)
+    data2 = DataFrame(localoffset)
+    data2.to_csv(recon_path + foldername + '/localOffset.csv', header=None)
+    data3 = DataFrame(recon_localoffset)
+    data3.to_csv(recon_path + foldername + '/differentialOffset.csv', header=None)
+
+
 diffOffset, anchor_offsets, recons_localoffset = predict_localoffset(models, anchor_models, ANCHOR_NUM, 5, valid_loader)
 diff_label, local_label, anchor_ind, anchor_label = get_label(5, valid_loader)
 real_coord = reconstruct_localoffset(anchor_ind, anchor_label, diff_label)
@@ -263,3 +277,5 @@ print(np.mean(abs(diff_label - diffOffset), axis=0))
 # print(np.mean(abs(anchor_label - anchor_offsets) , axis=0))
 print(np.mean(anchor_label, axis=0))
 print(np.mean(anchor_offsets, axis=0))
+
+write_files(diffOffset, local_label, recons_localoffset, "rigged5")

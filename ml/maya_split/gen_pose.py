@@ -16,6 +16,7 @@ input_path = "D:/ACG/project/ml/maya_split/gen_data/mover_rigged/"
 temp_path = "D:/ACG/project/ml/maya_split/gen_data/temp_data/"
 out_path = "D:/ACG/project/ml/maya_split/gen_data/data_set/"
 test_path = "D:/ACG/project/ml/maya_split/gen_data/test_data/"
+recon_path = "D:/ACG/project/ml/maya_split/gen_data/recon/"
 
 topology_path = "D:/ACG/project/ml/maya_split/gen_data/topology_Mery_geo_cn_body.csv"
 anchor_path = "D:/ACG/project/ml/maya_split/gen_data/face_anchor.csv"
@@ -719,7 +720,7 @@ def retreive_data(curr_data, filename):
         f.close()
 
 
-def reconstruction(reconstructor, training_type='differential', ground_truth=False):
+def reconstruction(reconstructor, training_type='local_offset', ground_truth=False, rigpath=input_path, datapath=temp_path, filename="rigged0.csv"):
     # Create deformers
     deformers = prep_mesh(MESH)
     deformer_env_dict = {}
