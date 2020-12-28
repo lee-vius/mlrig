@@ -1,6 +1,6 @@
 import sys
 import os
-from mlmodel import Network
+from mlmodel import Network_diff, Network_anchor
 from data_handler import DeformData, TestData
 import numpy as np
 import pandas as pd
@@ -102,7 +102,7 @@ test_dir_root = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya
 root_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/temp_data"
 input_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged"
 anchor_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/anchorPoints.csv"
-param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/trained/"
+param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/"
 topology_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/topology_Mery_geo_cn_body.csv"
 
 # create the reconstructor
@@ -131,25 +131,36 @@ device = "cpu"  # currently gpu not available
 LOAD = True
 
 # create three training models for x, y, z coordinates
-models = {'x': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
-          'y': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
-          'z': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device)}
+models = {'x': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
+          'y': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
+          'z': Network_diff(540, 12942, 2048, dropout=0.5).to(device)}
 
 if LOAD:
     # read in the model last time trained
-    models['x'].load_state_dict(torch.load(param_save_path + 'model_states_x.pth'))
-    models['y'].load_state_dict(torch.load(param_save_path + 'model_states_y.pth'))
-    models['z'].load_state_dict(torch.load(param_save_path + 'model_states_z.pth'))
+    models['x'].load_state_dict(torch.load(param_save_path + 'model_states_x.pth'), strict=True)
+    models['y'].load_state_dict(torch.load(param_save_path + 'model_states_y.pth'), strict=True)
+    models['z'].load_state_dict(torch.load(param_save_path + 'model_states_z.pth'), strict=True)
 
 # create anchor points models
 ANCHOR_NUM = 107
 anchor_models = []
 for i in range(ANCHOR_NUM):
-    anchor_models.append(Network(540, 3, 3, 64, dropout=0.0))
+    anchor_models.append(Network_anchor(540, 3, 64, dropout=0.0))
 
 if LOAD:
     for i, m in enumerate(anchor_models):
         m.load_state_dict(torch.load(param_save_path + '/anchor_models/model{}.pth'.format(i)))
+
+# create three training models for localoffset x, y, z coordinates
+local_models = {'x': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
+                'y': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
+                'z': Network_diff(540, 12942, 2048, dropout=0.5).to(device)}
+
+if LOAD:
+    # read in the model last time trained
+    local_models['x'].load_state_dict(torch.load(param_save_path + 'local_states_x.pth'))
+    local_models['y'].load_state_dict(torch.load(param_save_path + 'local_states_y.pth'))
+    local_models['z'].load_state_dict(torch.load(param_save_path + 'local_states_z.pth'))
 
 
 def predict_localoffset(diff_models, anchor_models, anchor_num, test_index, loader):
@@ -158,7 +169,7 @@ def predict_localoffset(diff_models, anchor_models, anchor_num, test_index, load
     anchor_offsets, anchor_index = predict_anchors(anchor_models, anchor_num, test_index, loader)
     # reconstruct coord
     recons_localoffset = reconstruct_localoffset(anchor_index, anchor_offsets, diffOffset)
-    return diffOffset, anchor_offsets, recons_localoffset
+    return diffOffset, anchor_offsets , recons_localoffset
 
 
 def predict_diffoffset(diff_models, test_index, loader):
@@ -241,10 +252,14 @@ def get_label(valid_index, loader):
     return diff_label[0], local_label[0], anchor_ind[0], anchor_offset[0]
 
 
-diffOffset, anchor_offsets, recons_localoffset = predict_localoffset(models, anchor_models, ANCHOR_NUM, 0, valid_loader)
-diff_label, local_label, anchor_ind, anchor_label = get_label(0, valid_loader)
+diffOffset, anchor_offsets, recons_localoffset = predict_localoffset(models, anchor_models, ANCHOR_NUM, 5, valid_loader)
+diff_label, local_label, anchor_ind, anchor_label = get_label(5, valid_loader)
+real_coord = reconstruct_localoffset(anchor_ind, anchor_label, diff_label)
 
-# real_coord = reconstruct_localoffset(anchor_ind, anchor_label, diff_label)
+print(np.mean(local_label - real_coord, axis=0))
+print(np.mean(local_label - recons_localoffset, axis=0))
 
-print(np.mean(diff_label - diffOffset, axis=0))
-print(np.mean(anchor_label - anchor_offsets , axis=0))
+print(np.mean(abs(diff_label - diffOffset), axis=0))
+# print(np.mean(abs(anchor_label - anchor_offsets) , axis=0))
+print(np.mean(anchor_label, axis=0))
+print(np.mean(anchor_offsets, axis=0))

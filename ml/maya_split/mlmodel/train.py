@@ -1,6 +1,6 @@
 import sys
 import os
-from mlmodel import Network
+from mlmodel import Network_anchor, Network_diff
 from data_handler import DeformData, TestData
 import numpy as np
 import matplotlib.pyplot as plt
@@ -48,12 +48,12 @@ print("Done!")
 device = "cpu"  # currently gpu not available
 print("Train Device is {}".format(device))
 
-LOAD = False
+LOAD = True
 
 # create three training models for x, y, z coordinates
-models = {'x': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
-          'y': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
-          'z': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device)}
+models = {'x': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
+          'y': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
+          'z': Network_diff(540, 12942, 2048, dropout=0.5).to(device)}
 
 if LOAD:
     # read in the model last time trained
@@ -76,7 +76,7 @@ anchor_criterion = nn.MSELoss()
 
 anchor_models = []
 for i in range(ANCHOR_NUM):
-    anchor_models.append(Network(540, 3, 3, 64, dropout=0.0))
+    anchor_models.append(Network_anchor(540, 3, 64, dropout=0.0))
 
 if LOAD:
     for i, m in enumerate(anchor_models):
@@ -87,9 +87,9 @@ for i in range(ANCHOR_NUM):
     anchor_optimizers.append(optim.SGD(anchor_models[i].parameters(), lr=0.1, weight_decay=1e-6))
 
 # create three training models for localoffset x, y, z coordinates
-local_models = {'x': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
-                'y': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device),
-                'z': Network(540, 12942, 5, 2048, dropout=0.5, bn=False).to(device)}
+local_models = {'x': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
+                'y': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
+                'z': Network_diff(540, 12942, 2048, dropout=0.5).to(device)}
 
 if LOAD:
     # read in the model last time trained
@@ -107,10 +107,11 @@ local_optimizers = {'x': optim.SGD(local_models['x'].parameters(), lr=0.1, weigh
 
 
 # TODO: choose an appropriate number of epoch
-num_epoch = 50
+num_epoch = 2
+ROUND = 5
 
 
-def train(models, train_loader, val_loader, num_epoch = 10): # Train the model
+def train(models, train_loader, val_loader, num_epoch = 10, fig_prefix=0): # Train the model
     print("Start training...")
     # Set the model to training mode
     models['x'].train()
@@ -162,9 +163,9 @@ def train(models, train_loader, val_loader, num_epoch = 10): # Train the model
 
     print("Done!")
     # TODO: comment following if not want to output loss history
-    plot_loss_history(train_loss['x'], valid_loss['x'], type='X')
-    plot_loss_history(train_loss['y'], valid_loss['y'], type='Y')
-    plot_loss_history(train_loss['z'], valid_loss['z'], type='Z')
+    plot_loss_history(train_loss['x'], valid_loss['x'], type='X_round{}'.format(fig_prefix))
+    plot_loss_history(train_loss['y'], valid_loss['y'], type='Y_round{}'.format(fig_prefix))
+    plot_loss_history(train_loss['z'], valid_loss['z'], type='Z_round{}'.format(fig_prefix))
 
 
 def evaluate(models, loader): # Evaluate accuracy on validation / test set
@@ -196,7 +197,7 @@ def evaluate(models, loader): # Evaluate accuracy on validation / test set
     return np.mean(running_loss['x']), np.mean(running_loss['y']), np.mean(running_loss['z'])
 
 
-def train_local(models, train_loader, val_loader, num_epoch = 10): # Train the model
+def train_local(models, train_loader, val_loader, num_epoch = 10, fig_prefix=0): # Train the model
     print("Start training localoffset...")
     # Set the model to training mode
     models['x'].train()
@@ -248,9 +249,9 @@ def train_local(models, train_loader, val_loader, num_epoch = 10): # Train the m
 
     print("Done!")
     # TODO: comment following if not want to output loss history
-    plot_loss_history(train_loss['x'], valid_loss['x'], type='local_X')
-    plot_loss_history(train_loss['y'], valid_loss['y'], type='local_Y')
-    plot_loss_history(train_loss['z'], valid_loss['z'], type='local_Z')
+    plot_loss_history(train_loss['x'], valid_loss['x'], type='local_X_round{}'.format(fig_prefix))
+    plot_loss_history(train_loss['y'], valid_loss['y'], type='local_Y_round{}'.format(fig_prefix))
+    plot_loss_history(train_loss['z'], valid_loss['z'], type='local_Z_round{}'.format(fig_prefix))
 
 
 def evaluate_local(models, loader): # Evaluate accuracy on validation / test set
@@ -282,7 +283,7 @@ def evaluate_local(models, loader): # Evaluate accuracy on validation / test set
     return np.mean(running_loss['x']), np.mean(running_loss['y']), np.mean(running_loss['z'])
 
 
-def train_anchor(anchor_models, anchor_num, train_loader, val_loader, num_epoch = 10): # Train the model
+def train_anchor(anchor_models, anchor_num, train_loader, val_loader, num_epoch = 10, fig_prefix=0): # Train the model
     print("Start training...")
     # Set train mode
     for model in anchor_models:
@@ -320,7 +321,7 @@ def train_anchor(anchor_models, anchor_num, train_loader, val_loader, num_epoch 
             valid_loss[i].append(val_loss[i])
     print("Done!")
     # TODO: comment following if not want to output loss history
-    plot_loss_history(train_loss[0], valid_loss[0], type='Anchor0')
+    plot_loss_history(train_loss[0], valid_loss[0], type='Anchor0_round{}'.format(fig_prefix))
 
 
 def evaluate_anchor(anchor_num, loader): # Evaluate accuracy on validation / test set
@@ -356,23 +357,25 @@ def plot_loss_history(train_loss, valid_loss, type='X'):
     plt.savefig(fig_dir + '/Loss_history_{}.png'.format(type))
     plt.close()
 
-# save the parameters after training
-# train(models, train_loader, val_loader, num_epoch=num_epoch)
-# torch.save(obj=models['x'].state_dict(), f=param_save_path + 'model_states_x.pth')
-# torch.save(obj=models['y'].state_dict(), f=param_save_path + 'model_states_y.pth')
-# torch.save(obj=models['z'].state_dict(), f=param_save_path + 'model_states_z.pth')
 
-# save the localoffset parameters after training
-train_local(local_models, train_loader, val_loader, num_epoch=num_epoch)
-torch.save(obj=local_models['x'].state_dict(), f=param_save_path + 'local_states_x.pth')
-torch.save(obj=local_models['y'].state_dict(), f=param_save_path + 'local_states_y.pth')
-torch.save(obj=local_models['z'].state_dict(), f=param_save_path + 'local_states_z.pth')
+for i in range(ROUND):
+    # save the parameters after training
+    train(models, train_loader, val_loader, num_epoch=num_epoch, fig_prefix=i)
+    torch.save(obj=models['x'].state_dict(), f=param_save_path + 'model_states_x.pth')
+    torch.save(obj=models['y'].state_dict(), f=param_save_path + 'model_states_y.pth')
+    torch.save(obj=models['z'].state_dict(), f=param_save_path + 'model_states_z.pth')
 
-# train the anchor points
-# train_anchor(anchor_models, ANCHOR_NUM, train_loader, val_loader, num_epoch=num_epoch)
-# # save the anchor models
-# for i in range(ANCHOR_NUM):
-#     if not os.path.exists(param_save_path + '/anchor_models/model{}.pth'.format(i)):
-#         fd = open(param_save_path + '/anchor_models/model{}.pth'.format(i), 'w', encoding="utf-8")
-#         fd.close()
-#     torch.save(obj=anchor_models[i].state_dict(), f=param_save_path + '/anchor_models/model{}.pth'.format(i))
+    # save the localoffset parameters after training
+    train_local(local_models, train_loader, val_loader, num_epoch=num_epoch, fig_prefix=i)
+    torch.save(obj=local_models['x'].state_dict(), f=param_save_path + 'local_states_x.pth')
+    torch.save(obj=local_models['y'].state_dict(), f=param_save_path + 'local_states_y.pth')
+    torch.save(obj=local_models['z'].state_dict(), f=param_save_path + 'local_states_z.pth')
+
+    # train the anchor points
+    train_anchor(anchor_models, ANCHOR_NUM, train_loader, val_loader, num_epoch=num_epoch, fig_prefix=i)
+    # save the anchor models
+    for i in range(ANCHOR_NUM):
+        if not os.path.exists(param_save_path + '/anchor_models/model{}.pth'.format(i)):
+            fd = open(param_save_path + '/anchor_models/model{}.pth'.format(i), 'w', encoding="utf-8")
+            fd.close()
+        torch.save(obj=anchor_models[i].state_dict(), f=param_save_path + '/anchor_models/model{}.pth'.format(i))
