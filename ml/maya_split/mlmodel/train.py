@@ -57,9 +57,9 @@ models = {'x': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
 
 if LOAD:
     # read in the model last time trained
-    models['x'].load_state_dict(torch.load(param_save_path + 'model_states_x.pth'))
-    models['y'].load_state_dict(torch.load(param_save_path + 'model_states_y.pth'))
-    models['z'].load_state_dict(torch.load(param_save_path + 'model_states_z.pth'))
+    models['x'].load_state_dict(torch.load(param_save_path + 'model_states_x.pth'), strict=True)
+    models['y'].load_state_dict(torch.load(param_save_path + 'model_states_y.pth'), strict=True)
+    models['z'].load_state_dict(torch.load(param_save_path + 'model_states_z.pth'), strict=True)
 
 # TODO: choose your loss function
 criterion = nn.L1Loss()
@@ -80,7 +80,7 @@ for i in range(ANCHOR_NUM):
 
 if LOAD:
     for i, m in enumerate(anchor_models):
-        m.load_state_dict(torch.load(param_save_path + '/anchor_models/model{}.pth'.format(i)))
+        m.load_state_dict(torch.load(param_save_path + '/anchor_models/model{}.pth'.format(i)), strict=True)
 
 anchor_optimizers = []
 for i in range(ANCHOR_NUM):
@@ -93,9 +93,9 @@ local_models = {'x': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
 
 if LOAD:
     # read in the model last time trained
-    local_models['x'].load_state_dict(torch.load(param_save_path + 'local_states_x.pth'))
-    local_models['y'].load_state_dict(torch.load(param_save_path + 'local_states_y.pth'))
-    local_models['z'].load_state_dict(torch.load(param_save_path + 'local_states_z.pth'))
+    local_models['x'].load_state_dict(torch.load(param_save_path + 'local_states_x.pth'), strict=True)
+    local_models['y'].load_state_dict(torch.load(param_save_path + 'local_states_y.pth'), strict=True)
+    local_models['z'].load_state_dict(torch.load(param_save_path + 'local_states_z.pth'), strict=True)
 
 # TODO: choose your loss function
 local_criterion = nn.MSELoss()
@@ -107,8 +107,8 @@ local_optimizers = {'x': optim.SGD(local_models['x'].parameters(), lr=0.1, weigh
 
 
 # TODO: choose an appropriate number of epoch
-num_epoch = 2
-ROUND = 5
+num_epoch = 10
+ROUND = 1
 
 
 def train(models, train_loader, val_loader, num_epoch = 10, fig_prefix=0): # Train the model
@@ -359,23 +359,24 @@ def plot_loss_history(train_loss, valid_loss, type='X'):
 
 
 for i in range(ROUND):
+    print("Round{}".format(i))
     # save the parameters after training
     train(models, train_loader, val_loader, num_epoch=num_epoch, fig_prefix=i)
     torch.save(obj=models['x'].state_dict(), f=param_save_path + 'model_states_x.pth')
     torch.save(obj=models['y'].state_dict(), f=param_save_path + 'model_states_y.pth')
     torch.save(obj=models['z'].state_dict(), f=param_save_path + 'model_states_z.pth')
 
-    # save the localoffset parameters after training
-    train_local(local_models, train_loader, val_loader, num_epoch=num_epoch, fig_prefix=i)
-    torch.save(obj=local_models['x'].state_dict(), f=param_save_path + 'local_states_x.pth')
-    torch.save(obj=local_models['y'].state_dict(), f=param_save_path + 'local_states_y.pth')
-    torch.save(obj=local_models['z'].state_dict(), f=param_save_path + 'local_states_z.pth')
+    # # save the localoffset parameters after training
+    # train_local(local_models, train_loader, val_loader, num_epoch=num_epoch, fig_prefix=i)
+    # torch.save(obj=local_models['x'].state_dict(), f=param_save_path + 'local_states_x.pth')
+    # torch.save(obj=local_models['y'].state_dict(), f=param_save_path + 'local_states_y.pth')
+    # torch.save(obj=local_models['z'].state_dict(), f=param_save_path + 'local_states_z.pth')
 
-    # train the anchor points
-    train_anchor(anchor_models, ANCHOR_NUM, train_loader, val_loader, num_epoch=num_epoch, fig_prefix=i)
-    # save the anchor models
-    for i in range(ANCHOR_NUM):
-        if not os.path.exists(param_save_path + '/anchor_models/model{}.pth'.format(i)):
-            fd = open(param_save_path + '/anchor_models/model{}.pth'.format(i), 'w', encoding="utf-8")
-            fd.close()
-        torch.save(obj=anchor_models[i].state_dict(), f=param_save_path + '/anchor_models/model{}.pth'.format(i))
+    # # train the anchor points
+    # train_anchor(anchor_models, ANCHOR_NUM, train_loader, val_loader, num_epoch=num_epoch, fig_prefix=i)
+    # # save the anchor models
+    # for i in range(ANCHOR_NUM):
+    #     if not os.path.exists(param_save_path + '/anchor_models/model{}.pth'.format(i)):
+    #         fd = open(param_save_path + '/anchor_models/model{}.pth'.format(i), 'w', encoding="utf-8")
+    #         fd.close()
+    #     torch.save(obj=anchor_models[i].state_dict(), f=param_save_path + '/anchor_models/model{}.pth'.format(i))

@@ -103,7 +103,7 @@ test_dir_root = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya
 root_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/temp_data"
 input_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged"
 anchor_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/anchorPoints.csv"
-param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/trained/"
+param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/"
 topology_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/topology_Mery_geo_cn_body.csv"
 recon_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/recon/"
 
