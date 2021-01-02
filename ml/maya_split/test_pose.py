@@ -1,4 +1,5 @@
 import os
+import sys
 import csv
 import itertools
 import maya.cmds as mc
@@ -6,16 +7,28 @@ import maya.OpenMaya as OpenMaya
 import maya.api.OpenMaya as om
 
 
-# the folder containing rigged parameters
-input_path = "D:/ACG/project/ml/maya_split/gen_data/mover_rigged/"
-temp_path = "D:/ACG/project/ml/maya_split/gen_data/temp_data/"
-out_path = "D:/ACG/project/ml/maya_split/gen_data/data_set/"
-test_path = "D:/ACG/project/ml/maya_split/gen_data/test_data/"
-recon_path = "D:/ACG/project/ml/maya_split/gen_data/recon/"
 
-topology_path = "D:/ACG/project/ml/maya_split/gen_data/topology_Mery_geo_cn_body.csv"
-anchor_path = "D:/ACG/project/ml/maya_split/gen_data/face_anchor.csv"
-joint_path = "D:/ACG/project/ml/maya_split/gen_data/joint_relation.csv"
+input_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged/"
+temp_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/temp_data/"
+out_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/data_set/"
+test_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/test_data/"
+recon_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/recon/"
+
+topology_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/topology_Mery_geo_cn_body.csv"
+anchor_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/face_anchor.csv"
+joint_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/joint_relation.csv"
+
+# the folder containing rigged parameters
+if sys.platform == 'win32':
+    input_path = "D:/ACG/project/ml/maya_split/gen_data/mover_rigged/"
+    temp_path = "D:/ACG/project/ml/maya_split/gen_data/temp_data/"
+    out_path = "D:/ACG/project/ml/maya_split/gen_data/data_set/"
+    test_path = "D:/ACG/project/ml/maya_split/gen_data/test_data/"
+    recon_path = "D:/ACG/project/ml/maya_split/gen_data/recon/"
+
+    topology_path = "D:/ACG/project/ml/maya_split/gen_data/topology_Mery_geo_cn_body.csv"
+    anchor_path = "D:/ACG/project/ml/maya_split/gen_data/face_anchor.csv"
+    joint_path = "D:/ACG/project/ml/maya_split/gen_data/joint_relation.csv"
 
 # filename = "rigged0.csv"
 
@@ -25,6 +38,7 @@ TEMP_TARGET = 'mlTarget'
 SKIN_TYPES = ['skinCluster']
 
 MESH = "Mery_geo_cn_body"
+VTX = ".vtx"
 PRECISION = 8
 
 
@@ -55,7 +69,7 @@ def read_in_data(filepath):
         temp = {}
         reader = csv.reader(f)
         content = list(reader)
-        if file_name[:-4] in ['anchorPoints', 'differentialOffset', 'localOffset', 'worldOffset', 'worldPos']:
+        if file_name[:-4] in ['anchorPoints', 'differentialOffset', 'localOffset', 'worldOffset', 'worldPos', 'localmode']:
             for line in content:
                 temp[int(line[0])] = [float(coord) for coord in line[1:]]
         elif file_name[:-4] in ['jointLocalMatrix', 'jointLocalQuaternion', 'jointWorldMatrix', 'jointWorldQuaternion']:
@@ -188,8 +202,7 @@ def setShapeData(node,
             mc.setAttr(shapeAttr + ".targetWeights[" + str(weight) + "]", targetWeights[weight])
 
 
-
-def reconstruction(rigpath, datapath, training_type='local_offset'):
+def shut_deformers():
     # Create deformers
     deformers = prep_mesh(MESH)
     deformer_env_dict = {}
@@ -199,6 +212,10 @@ def reconstruction(rigpath, datapath, training_type='local_offset'):
         if dtype not in SKIN_TYPES:
             deformer_env_dict[deformer] = mc.getAttr(deformer + '.envelope')
             mc.setAttr(deformer + '.envelope', 0.0)
+    return deformer_env_dict
+
+
+def reconstruction(rigpath, datapath, training_type='local_offset'):
     # set the deformers
     BLENDSHAPE = TEMP_BS_NODE
     mesh = mc.deformer(BLENDSHAPE, query=True, geometry=True)[0]
@@ -223,8 +240,12 @@ def reconstruction(rigpath, datapath, training_type='local_offset'):
         cur_offset_data = pose_data['localOffset']
         for vtx_id in cur_offset_data:
             shape_data['shapes'][TEMP_TARGET]['offsets'][vtx_id] = cur_offset_data[vtx_id]
-    elif training_type == 'differntial':
+    elif training_type == 'differential':
         cur_offset_data = pose_data['differentialOffset']
+        for vtx_id in cur_offset_data:
+            shape_data['shapes'][TEMP_TARGET]['offsets'][vtx_id] = cur_offset_data[vtx_id]
+    elif training_type == 'local_mode':
+        cur_offset_data = pose_data['localmode']
         for vtx_id in cur_offset_data:
             shape_data['shapes'][TEMP_TARGET]['offsets'][vtx_id] = cur_offset_data[vtx_id]
 
@@ -232,3 +253,36 @@ def reconstruction(rigpath, datapath, training_type='local_offset'):
     mc.setAttr(BLENDSHAPE + '.' + TEMP_TARGET, 1.0)
 
 
+def show_predict_loss(datapath, mode="differential"):
+    pose_data = read_in_data(datapath)
+    label_data = pose_data['localOffset']
+    if mode == 'differential':
+        predict_data = pose_data['differentialOffset']
+    else:
+        predict_data = pose_data['localmode']
+
+    temp_max = 0.0
+    diff_coords = []
+    for vid in label_data:
+        diff_coord = [abs(label_data[vid][i] - predict_data[vid][i]) for i in range(3)]
+        dist = sum([diff_coord[i]**2 for i in range(3)])**0.5
+        diff_coords.append(dist)
+        # if max(diff_coord) > temp_max:
+        #     temp_max = max(diff_coord)
+    temp_max = max(diff_coords)
+    scale = 2 # max loss set as 2 cm
+    # do a linear interpolation to associate with color value
+    for ind, vtx in enumerate(diff_coords):
+        col = round(0.5 + vtx * 0.5 / scale, 2)
+        mc.polyColorPerVertex(MESH + VTX + '[' + str(ind) + ']', rgb=(col, 0.5, 0.5))
+    return
+
+
+# TODO: only start reconstruction when training is complete
+# As the deformer will be changed from default
+shut_deformers()
+
+rigpath = input_path + "rigged5.csv"
+datapath = recon_path + "rigged5"
+
+reconstruction(rigpath, datapath, training_type="differential")

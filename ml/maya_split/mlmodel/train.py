@@ -51,9 +51,9 @@ print("Train Device is {}".format(device))
 LOAD = True
 
 # create three training models for x, y, z coordinates
-models = {'x': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
-          'y': Network_diff(540, 12942, 2048, dropout=0.5).to(device),
-          'z': Network_diff(540, 12942, 2048, dropout=0.5).to(device)}
+models = {'x': Network_diff(540, 12942, 2048, dropout=0.0).to(device),
+          'y': Network_diff(540, 12942, 2048, dropout=0.0).to(device),
+          'z': Network_diff(540, 12942, 2048, dropout=0.0).to(device)}
 
 if LOAD:
     # read in the model last time trained

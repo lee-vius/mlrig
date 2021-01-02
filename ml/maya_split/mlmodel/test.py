@@ -103,7 +103,7 @@ test_dir_root = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya
 root_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/temp_data"
 input_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged"
 anchor_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/anchorPoints.csv"
-param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/"
+param_save_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/mlmodel/model_param/trained/"
 topology_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/topology_Mery_geo_cn_body.csv"
 recon_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/recon/"
 
@@ -259,23 +259,31 @@ def write_files(diffOffset, localoffset, recon_localoffset, foldername):
     if not os.path.exists(recon_path + foldername):
         os.mkdir(recon_path + foldername)
     data1 = DataFrame(diffOffset)
-    data1.to_csv(recon_path + foldername + '/differential.csv', header=None)
+    data1.to_csv(recon_path + foldername + '/localmode.csv', header=None)
     data2 = DataFrame(localoffset)
     data2.to_csv(recon_path + foldername + '/localOffset.csv', header=None)
     data3 = DataFrame(recon_localoffset)
     data3.to_csv(recon_path + foldername + '/differentialOffset.csv', header=None)
 
 
-diffOffset, anchor_offsets, recons_localoffset = predict_localoffset(models, anchor_models, ANCHOR_NUM, 5, valid_loader)
-diff_label, local_label, anchor_ind, anchor_label = get_label(5, valid_loader)
-real_coord = reconstruct_localoffset(anchor_ind, anchor_label, diff_label)
+for index in [0, 5, 16, 29, 37, 43, 59, 71]:
+    # diffOffset, anchor_offsets, recons_localoffset = predict_localoffset(models, anchor_models, ANCHOR_NUM, 5, valid_loader)
+    diff_label, local_label, anchor_ind, anchor_label = get_label(index, valid_loader)
+    # real_coord = reconstruct_localoffset(anchor_ind, anchor_label, diff_label)
+    diffOffset = predict_diffoffset(models, index, valid_loader)
+    localOffset = predict_diffoffset(local_models, index, valid_loader)
+    anchorOffset, _ = predict_anchors(anchor_models, ANCHOR_NUM, index, valid_loader)
+    recons_localoffset = reconstruct_localoffset(anchor_ind, anchorOffset, diffOffset)
 
-print(np.mean(local_label - real_coord, axis=0))
-print(np.mean(local_label - recons_localoffset, axis=0))
+    # print(np.mean(local_label - real_coord, axis=0))
+    print("local offset difference: {}".format(np.mean(local_label - localOffset, axis=0)))
 
-print(np.mean(abs(diff_label - diffOffset), axis=0))
-# print(np.mean(abs(anchor_label - anchor_offsets) , axis=0))
-print(np.mean(anchor_label, axis=0))
-print(np.mean(anchor_offsets, axis=0))
+    print("diff offsets difference: {}".format(np.mean(abs(diff_label - diffOffset), axis=0)))
+    # print(np.mean(diffOffset, axis=0))
+    # print(np.mean(diff_label, axis=0))
+    print("anchor difference: {}".format(np.mean(abs(anchor_label - anchorOffset) , axis=0)))
+    # print(np.mean(anchor_label, axis=0))
+    # print(np.mean(anchorOffset, axis=0))
+    print("reconstruct difference: {}".format(np.mean(abs(local_label - recons_localoffset), axis=0)))
 
-write_files(diffOffset, local_label, recons_localoffset, "rigged5")
+    write_files(localOffset, local_label, recons_localoffset, "rigged{}".format(index))

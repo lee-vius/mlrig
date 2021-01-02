@@ -627,7 +627,6 @@ def setShapeData(node,
             mc.setAttr(shapeAttr + ".targetWeights[" + str(weight) + "]", targetWeights[weight])
 
 
-
 def getShapeAliasLookup(node):
     """
     Builds a lookup dictionary that maps a blendShape node's weight
