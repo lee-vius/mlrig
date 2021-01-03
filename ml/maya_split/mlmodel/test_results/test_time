@@ -1,0 +1,7 @@
+Batch size = 1:
+predict time: 0.0514s 
+recons time: 0.220s
+
+Batch size = 100:
+predict time: 0.387s
+recons time: 22.1s

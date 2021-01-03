@@ -9,6 +9,7 @@ import maya.api.OpenMaya as om
 
 
 input_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged/"
+test_dir_root = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/data_set/mover_rigged/"
 temp_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/temp_data/"
 out_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/data_set/"
 test_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/test_data/"
@@ -21,6 +22,7 @@ joint_path = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_sp
 # the folder containing rigged parameters
 if sys.platform == 'win32':
     input_path = "D:/ACG/project/ml/maya_split/gen_data/mover_rigged/"
+    test_dir_root = "D:/ACG/project/ml/maya_split/gen_data/data_set/mover_rigged/"
     temp_path = "D:/ACG/project/ml/maya_split/gen_data/temp_data/"
     out_path = "D:/ACG/project/ml/maya_split/gen_data/data_set/"
     test_path = "D:/ACG/project/ml/maya_split/gen_data/test_data/"

@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 from mlmodel import Network_diff, Network_anchor
 from data_handler import DeformData, TestData
 import numpy as np
@@ -99,7 +100,7 @@ class reconstru():
 
 
 # Define test file path
-test_dir_root = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/data_set"
+test_dir_root = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/data_set/mover_rigged"
 root_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/temp_data"
 input_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/mover_rigged"
 anchor_dir = "/Users/levius/Desktop/高级图像图形学/项目/code/ml/maya_split/gen_data/anchorPoints.csv"
@@ -112,7 +113,7 @@ RECONSTRUCTOR = reconstru(topology_path)
 
 if sys.platform == 'win32':
     # Redefine folder path if the system is windows
-    test_dir_root = "D:/ACG/project/ml/maya_split/gen_data/data_set"
+    test_dir_root = "D:/ACG/project/ml/maya_split/gen_data/data_set/mover_rigged"
     root_dir = "D:/ACG/project/ml/maya_split/gen_data/temp_data"
     input_dir = "D:/ACG/project/ml/maya_split/gen_data/mover_rigged"
     anchor_dir = "D:/ACG/project/ml/maya_split/gen_data/anchorPoints.csv"
@@ -122,12 +123,16 @@ if sys.platform == 'win32':
 
 
 # Load in the test dataset
+BATCH_SIZE = 1
 print("Loading testing datasets...")
 DATA_TEST = TestData(root_dir=test_dir_root, input_dir=anchor_dir)
 DATA_VALID = DeformData(root_dir=root_dir, inputD_dir=input_dir)
 test_loader = DataLoader(DATA_TEST, batch_size=1)
-valid_loader = DataLoader(DATA_VALID, batch_size=1)
+valid_loader = DataLoader(DATA_VALID, batch_size=BATCH_SIZE)
 print("Loading Done!")
+
+KEEP_INDEX = [] # the index that will not be counted into testing
+TOL = 1e-10 # the tolerance
 
 device = "cpu"  # currently gpu not available
 
@@ -164,6 +169,21 @@ if LOAD:
     local_models['x'].load_state_dict(torch.load(param_save_path + 'local_states_x.pth'))
     local_models['y'].load_state_dict(torch.load(param_save_path + 'local_states_y.pth'))
     local_models['z'].load_state_dict(torch.load(param_save_path + 'local_states_z.pth'))
+
+
+def handle_omit(loader):
+    # get a list of index that will be ommitted
+    temp_result = 0
+    for i, b in enumerate(loader):
+        local_label = np.array(b['localOffset'], dtype=np.float)
+        for local in local_label:
+            omit = 0
+            omit += (abs(local[:, 0]) < TOL)
+            omit += (abs(local[:, 1]) < TOL)
+            omit += (local[:, 2] < TOL)
+            omit = (omit == 3)
+            temp_result += omit
+    return list(np.argwhere(temp_result != np.max(temp_result)).reshape(1, -1)[0])
 
 
 def predict_localoffset(diff_models, anchor_models, anchor_num, test_index, loader):
@@ -220,7 +240,7 @@ def reconstruct_localoffset(anchor_index, anchor_offsets, diffoffset):
     if not RECONSTRUCTOR.isCalculated:
         RECONSTRUCTOR.cal_Lmatrice(anchor_index, anchor_offsets, diffoffset)
         RECONSTRUCTOR.isCalculated = True
-    print("Laplacian calculated")
+        print("Laplacian calculated")
 
     # construct differential offsets timed by their valance
     diff_coord = diffoffset * RECONSTRUCTOR.VALENCES
@@ -262,8 +282,93 @@ def write_files(diffOffset, localoffset, recon_localoffset, foldername):
     data1.to_csv(recon_path + foldername + '/localmode.csv', header=None)
     data2 = DataFrame(localoffset)
     data2.to_csv(recon_path + foldername + '/localOffset.csv', header=None)
-    data3 = DataFrame(recon_localoffset)
+    copy_recon = np.array(recon_localoffset)
+    copy_recon[KEEP_INDEX] = 0
+    data3 = DataFrame(recon_localoffset - copy_recon)
     data3.to_csv(recon_path + foldername + '/differentialOffset.csv', header=None)
+
+
+def test_time(diff_models, anchor_models, anchor_num, loader):
+    # calculate time cost for each part
+    timer = []
+    recons_timer = []
+    # predict parts
+    diff_models['x'].eval()
+    diff_models['y'].eval()
+    diff_models['z'].eval()
+    for i in range(anchor_num):
+        anchor_models[i].eval()
+    with torch.no_grad():
+        for i, b in enumerate(loader):
+            time_start = time.time()
+            batch = torch.tensor(b['mover_value'].reshape(BATCH_SIZE, -1), dtype=torch.float32).to(device)
+            anchor_index = b['anchor_index']
+            # predict the results
+            pred_x = diff_models['x'](batch)
+            pred_y = diff_models['y'](batch)
+            pred_z = diff_models['z'](batch)
+            pred_x = np.expand_dims(pred_x, axis=2)
+            pred_y = np.expand_dims(pred_y, axis=2)
+            pred_z = np.expand_dims(pred_z, axis=2)
+            result = np.concatenate((pred_x, pred_y, pred_z), axis=2)
+            anchor_result = np.concatenate([np.expand_dims(ml(batch), axis=1) for ml in anchor_models], axis=1)
+            # first timer
+            time_end = time.time()
+            timer.append(time_end - time_start)
+            time_start = time.time()
+            # reconstruct
+            for i in range(result.shape[0]):
+                reconstruct_localoffset(anchor_index[i], anchor_result[i], result[i])
+            time_end = time.time()
+            recons_timer.append(time_end - time_start)
+    return timer, recons_timer
+
+
+def test_effect(diff_models, anchor_models, anchor_num, loader):
+    # calculate time cost for each part
+    diff_test = []
+    anchor_test = []
+    recon_test = []
+    recon_max = []
+    # predict parts
+    diff_models['x'].eval()
+    diff_models['y'].eval()
+    diff_models['z'].eval()
+    for i in range(anchor_num):
+        anchor_models[i].eval()
+    with torch.no_grad():
+        for i, b in enumerate(loader):
+            batch = torch.tensor(b['mover_value'].reshape(BATCH_SIZE, -1), dtype=torch.float32).to(device)
+            anchor_index = b['anchor_index']
+            local_label = np.array(b['localOffset'], dtype=np.float)
+            anchor_offset = np.array(b['anchor_offsets'], dtype=np.float)
+            diff_label = np.array(b['differentialOffset'], dtype=np.float)
+            # predict the results
+            pred_x = diff_models['x'](batch)
+            pred_y = diff_models['y'](batch)
+            pred_z = diff_models['z'](batch)
+            pred_x = np.expand_dims(pred_x, axis=2)
+            pred_y = np.expand_dims(pred_y, axis=2)
+            pred_z = np.expand_dims(pred_z, axis=2)
+            result = np.concatenate((pred_x, pred_y, pred_z), axis=2)
+            anchor_result = np.concatenate([np.expand_dims(ml(batch), axis=1) for ml in anchor_models], axis=1)
+            # reconstruct
+            recons_result = []
+            for i in range(result.shape[0]):
+                recons_coord = reconstruct_localoffset(anchor_index[i], anchor_result[i], result[i])
+                recons_result.append(recons_coord)
+            recons_result = np.array(recons_result)
+            # calculate difference
+            diff_test.append(np.mean(abs(diff_label - result)[:, KEEP_INDEX, :], axis=(0, 1)))
+            anchor_test.append(np.mean(abs(anchor_result - anchor_offset), axis=(0, 1)))
+            recon_test.append(np.mean(abs(recons_result - local_label)[:, KEEP_INDEX], axis=(0, 1)))
+            recon_max.append(np.max(abs(recons_result - local_label)[:, KEEP_INDEX], axis=(0, 1)))
+    return diff_test, anchor_test, recon_test, recon_max
+
+
+# get the omit index
+KEEP_INDEX = handle_omit(valid_loader)
+print("num of keeping: {}".format(len(KEEP_INDEX)))
 
 
 for index in [0, 5, 16, 29, 37, 43, 59, 71]:
@@ -287,3 +392,31 @@ for index in [0, 5, 16, 29, 37, 43, 59, 71]:
     print("reconstruct difference: {}".format(np.mean(abs(local_label - recons_localoffset), axis=0)))
 
     write_files(localOffset, local_label, recons_localoffset, "rigged{}".format(index))
+
+# test the well-animated facial
+# for index in [0, 1, 2]:
+#     diffOffset = predict_diffoffset(models, index, test_loader)
+#     localOffset = predict_diffoffset(local_models, index, valid_loader)
+#     anchorOffset, anchor_ind = predict_anchors(anchor_models, ANCHOR_NUM, index, valid_loader)
+#     reconsOffset = reconstruct_localoffset(anchor_ind, anchorOffset, diffOffset)
+#     write_files(diffOffset, localOffset, reconsOffset, "testrigged{}".format(index))
+
+
+# timer, recon_timer = test_time(models, anchor_models, ANCHOR_NUM, valid_loader)
+# timer, recon_timer = test_time(models, anchor_models, ANCHOR_NUM, valid_loader)
+# print("timer for prediction of batch{}: ".format(BATCH_SIZE))
+# print(np.mean(timer))
+# print("timer for reconstruction of batch{}: ".format(BATCH_SIZE))
+# print(np.mean(recon_timer))
+
+
+# test the effectiveness of methos
+# diff_test, anchor_test, recon_test, recon_max = test_effect(models, anchor_models, ANCHOR_NUM, valid_loader)
+# print("test differential effect: ")
+# print(diff_test)
+# print("test anchor effect: ")
+# print(anchor_test)
+# print("test reconstruction effect: ")
+# print(recon_test)
+# print("test reconstruction effect max: ")
+# print(recon_max)
